@@ -68,7 +68,7 @@ contract VaultTest is Test {
     }
 
     function setUp() public {
-        uint256 forkId = vm.createSelectFork(vm.rpcUrl("FORKING_RPC_URL"));
+        uint256 forkId = vm.createSelectFork(vm.rpcUrl("ETH_RPC_URL"));
         vm.selectFork(forkId);
 
         vm.label(feeRecipient, "feeRecipient");

@@ -13,11 +13,8 @@ contract YearnAdapterTest is AbstractAdapterTest {
 
     VaultAPI yearnVault;
 
-    // TODO update this fork -- maybe via config
     function setUp() public {
-        uint256 forkId = vm.createSelectFork(
-            "https://eth-mainnet.alchemyapi.io/v2/KsuP431uPWKR3KFb-K_0MT1jcwpUnjAg"
-        );
+        uint256 forkId = vm.createSelectFork(vm.rpcUrl("ETH_RPC_URL"));
         vm.selectFork(forkId);
 
         testConfigStorage = ITestConfigStorage(

@@ -12,11 +12,8 @@ contract YearnVaultTest is AbstractVaultIntegrationTest {
     VaultAPI yearnVault;
     address yearnRegistry = 0x50c1a2eA0a861A967D9d0FFE2AE4012c2E053804;
 
-    // TODO update this fork -- maybe via config
     function setUp() public {
-        uint256 forkId = vm.createSelectFork(
-            "https://eth-mainnet.alchemyapi.io/v2/KsuP431uPWKR3KFb-K_0MT1jcwpUnjAg"
-        );
+        uint256 forkId = vm.createSelectFork(vm.rpcUrl("ETH_RPC_URL"));
         vm.selectFork(forkId);
 
         testConfigStorage = ITestConfigStorage(

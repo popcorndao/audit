@@ -14,12 +14,8 @@ contract BeefyVaultTest is AbstractVaultIntegrationTest {
     IBeefyVault beefyVault;
     IStrategy strategy;
 
-    // TODO update this fork -- maybe via config
     function setUp() public {
-        uint256 forkId = vm.createSelectFork(
-            "https://polygon-mainnet.g.alchemy.com/v2/KsuP431uPWKR3KFb-K_0MT1jcwpUnjAg",
-            36869759
-        );
+        uint256 forkId = vm.createSelectFork(vm.rpcUrl("POLYGON_RPC_URL"));
         vm.selectFork(forkId);
 
         testConfigStorage = ITestConfigStorage(
