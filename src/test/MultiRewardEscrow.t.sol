@@ -4,24 +4,14 @@ pragma solidity ^0.8.15;
 
 import {Test} from "forge-std/Test.sol";
 import {Math} from "openzeppelin-contracts/utils/math/Math.sol";
-
 import {MockERC20} from "./utils/mocks/MockERC20.sol";
 import {MultiRewardEscrow, IERC20} from "../utils/MultiRewardEscrow.sol";
-import {IContractRegistry} from "../interfaces/IContractRegistry.sol";
-import {IACLRegistry} from "../interfaces/IACLRegistry.sol";
-import {KeeperIncentiveV2, IKeeperIncentiveV2} from "../utils/KeeperIncentiveV2.sol";
-
-address constant CONTRACT_REGISTRY = 0x85831b53AFb86889c20aF38e654d871D8b0B7eC3;
-address constant ACL_REGISTRY = 0x8A41aAa4B467ea545DDDc5759cE3D35984F093f4;
-address constant ACL_ADMIN = 0x92a1cB552d0e177f3A135B4c87A4160C8f2a485f;
 
 contract MultiRewardEscrowTest is Test {
     MockERC20 token1;
     MockERC20 token2;
     IERC20 iToken1;
     IERC20 iToken2;
-
-    KeeperIncentiveV2 keeperIncentive;
 
     MultiRewardEscrow escrow;
 
@@ -48,9 +38,6 @@ contract MultiRewardEscrowTest is Test {
     event FeeClaimed(IERC20 indexed token, uint256 amount);
 
     function setUp() public {
-        uint256 forkId = vm.createSelectFork(vm.rpcUrl("ETH_RPC_URL"));
-        vm.selectFork(forkId);
-
         vm.label(alice, "alice");
         vm.label(bob, "bob");
         vm.label(feeRecipient, "feeRecipient");
@@ -61,17 +48,7 @@ contract MultiRewardEscrowTest is Test {
         iToken1 = IERC20(address(token1));
         iToken2 = IERC20(address(token2));
 
-        keeperIncentive = new KeeperIncentiveV2(
-            IContractRegistry(CONTRACT_REGISTRY),
-            0,
-            0
-        );
-
-        escrow = new MultiRewardEscrow(
-            address(this),
-            IKeeperIncentiveV2(address(keeperIncentive)),
-            feeRecipient
-        );
+        escrow = new MultiRewardEscrow(address(this), feeRecipient);
 
         token1.mint(alice, 10 ether);
         token2.mint(alice, 10 ether);
@@ -79,35 +56,6 @@ contract MultiRewardEscrowTest is Test {
         vm.startPrank(alice);
         token1.approve(address(escrow), 10 ether);
         token2.approve(address(escrow), 10 ether);
-        vm.stopPrank();
-
-        vm.startPrank(ACL_ADMIN);
-        IACLRegistry(ACL_REGISTRY).grantRole(
-            keccak256("INCENTIVE_MANAGER_ROLE"),
-            ACL_ADMIN
-        );
-
-        IContractRegistry(CONTRACT_REGISTRY).addContract(
-            keccak256("FeeRecipient"),
-            feeRecipient,
-            keccak256("1")
-        );
-        IContractRegistry(CONTRACT_REGISTRY).updateContract(
-            keccak256("KeeperIncentive"),
-            address(keeperIncentive),
-            keccak256("2")
-        );
-
-        // Create incentive with any token. We use `tip()` anyways
-        keeperIncentive.createIncentive(
-            address(escrow),
-            1,
-            false,
-            true,
-            address(token1),
-            1,
-            0
-        );
         vm.stopPrank();
     }
 
@@ -296,23 +244,6 @@ contract MultiRewardEscrowTest is Test {
         escrow.setFees(tokens, fees);
     }
 
-    function test__setKeeperPerc() public {
-        vm.expectEmit(false, false, false, true, address(escrow));
-        emit KeeperPercUpdated(0, 1e16);
-        escrow.setKeeperPerc(1e16);
-
-        assertEq(escrow.keeperPerc(), 1e16);
-    }
-
-    function testFail__setKeeperPerc_nonOwner() public {
-        vm.prank(alice);
-        escrow.setKeeperPerc(1e16);
-    }
-
-    function testFail__setKeeperPerc_InvalidPerc() public {
-        escrow.setKeeperPerc(1e19);
-    }
-
     function test__take_fees() public {
         (IERC20[] memory tokens, uint256[] memory fees) = _getFeeSettings();
         escrow.setFees(tokens, fees);
@@ -332,41 +263,9 @@ contract MultiRewardEscrowTest is Test {
         assertEq(bobEscrows[1].balance, 10 ether - expectedFee2);
         assertEq(bobEscrows[1].initialBalance, 10 ether - expectedFee2);
 
-        (uint256 accrued, ) = escrow.fees(iToken1);
-        assertEq(accrued, expectedFee1);
+        assertEq(iToken1.balanceOf(feeRecipient), expectedFee1);
 
-        (accrued, ) = escrow.fees(iToken2);
-        assertEq(accrued, expectedFee2);
-    }
-
-    function test__claimFees() public {
-        (IERC20[] memory tokens, uint256[] memory fees) = _getFeeSettings();
-        escrow.setFees(tokens, fees);
-        escrow.setKeeperPerc(1e15);
-        _lockFunds();
-
-        uint256 expectedFee1 = Math.mulDiv(10 ether, 1e14, 1e18);
-        uint256 expectedFee2 = Math.mulDiv(10 ether, 1e16, 1e18);
-
-        uint256 tipAmount1 = Math.mulDiv(expectedFee1, 1e15, 1e18);
-        uint256 tipAmount2 = Math.mulDiv(expectedFee2, 1e15, 1e18);
-
-        vm.expectEmit(false, false, false, true, address(escrow));
-        emit FeeClaimed(IERC20(address(token1)), expectedFee1 - tipAmount1);
-        vm.expectEmit(false, false, false, true, address(escrow));
-        emit FeeClaimed(IERC20(address(token2)), expectedFee2 - tipAmount2);
-        escrow.claimFees(tokens);
-
-        assertEq(token1.balanceOf(feeRecipient), expectedFee1 - tipAmount1);
-        assertEq(token2.balanceOf(feeRecipient), expectedFee2 - tipAmount2);
-
-        assertEq(token1.balanceOf(address(keeperIncentive)), tipAmount1);
-        assertEq(token2.balanceOf(address(keeperIncentive)), tipAmount2);
-    }
-
-    function testFail__claimFees_no_fees() public {
-        (IERC20[] memory tokens, ) = _getFeeSettings();
-        escrow.claimFees(tokens);
+        assertEq(iToken2.balanceOf(feeRecipient), expectedFee2);
     }
 
     /*//////////////////////////////////////////////////////////////

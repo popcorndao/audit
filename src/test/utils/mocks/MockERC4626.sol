@@ -2,12 +2,14 @@
 // Docgen-SOLC: 0.8.15
 pragma solidity ^0.8.15;
 
-import "openzeppelin-contracts/token/ERC20/ERC20.sol";
-import "openzeppelin-contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC4626, IERC20} from "../../../interfaces/vault/IERC4626.sol";
+import {ERC20} from "openzeppelin-contracts/token/ERC20/ERC20.sol";
+import {IERC20Metadata} from "openzeppelin-contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {SafeERC20Upgradeable as SafeERC20} from "openzeppelin-contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 
 contract MockERC4626 is ERC20 {
-    using SafeERC20 for ERC20;
+    using SafeERC20 for IERC20;
     using FixedPointMathLib for uint256;
 
     uint256 public beforeWithdrawHookCalledCounter = 0;
@@ -38,16 +40,16 @@ contract MockERC4626 is ERC20 {
                                IMMUTABLES
     //////////////////////////////////////////////////////////////*/
 
-    ERC20 public immutable asset;
+    IERC20 public immutable asset;
 
     constructor(
-        ERC20 _asset,
+        IERC20 _asset,
         string memory _name,
         string memory _symbol
     ) ERC20(_name, _symbol) {
         asset = _asset;
 
-        _decimals = _asset.decimals();
+        _decimals = IERC20Metadata(address(_asset)).decimals();
     }
 
     /*//////////////////////////////////////////////////////////////

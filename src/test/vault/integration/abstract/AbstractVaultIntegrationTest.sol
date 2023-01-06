@@ -6,11 +6,7 @@ import {Test} from "forge-std/Test.sol";
 import {ITestConfigStorage} from "./ITestConfigStorage.sol";
 import {IAdapter, IERC4626} from "../../../../interfaces/vault/IAdapter.sol";
 import {IStrategy} from "../../../../interfaces/vault/IStrategy.sol";
-import {KeeperConfig} from "../../../../utils/KeeperIncentivized.sol";
 import {Vault, FeeStructure, IERC20Metadata, IERC20} from "../../../../vault/Vault.sol";
-import {KeeperIncentiveV2, IKeeperIncentiveV2} from "../../../../utils/KeeperIncentiveV2.sol";
-import {IContractRegistry} from "../../../../interfaces/IContractRegistry.sol";
-import {IACLRegistry} from "../../../../interfaces/IACLRegistry.sol";
 import {MathUpgradeable as Math} from "openzeppelin-contracts-upgradeable/utils/math/MathUpgradeable.sol";
 import {Strings} from "openzeppelin-contracts/utils/Strings.sol";
 
@@ -31,7 +27,6 @@ contract AbstractVaultIntegrationTest is Test {
     IERC20 asset;
     Vault vault;
     IAdapter adapter;
-    KeeperIncentiveV2 keeperIncentive;
 
     address bob = address(1);
     address alice = address(2);
@@ -67,14 +62,6 @@ contract AbstractVaultIntegrationTest is Test {
         defaultAmount = 10**IERC20Metadata(address(asset_)).decimals();
         maxDeposit = defaultAmount * 10_000;
 
-        _setUpAdminAddresses(block.chainid);
-
-        keeperIncentive = new KeeperIncentiveV2(
-            IContractRegistry(contractRegistry),
-            0,
-            0
-        );
-
         address vaultAddress = address(new Vault());
         vault = Vault(vaultAddress);
         vault.initialize(
@@ -87,40 +74,8 @@ contract AbstractVaultIntegrationTest is Test {
                 performance: 0
             }),
             feeRecipient,
-            IKeeperIncentiveV2(keeperIncentive),
-            KeeperConfig({
-                minWithdrawalAmount: 100,
-                incentiveVigBps: 1e15,
-                keeperPayout: 9
-            }),
             address(this)
         );
-
-        vm.startPrank(aclAdmin);
-        IACLRegistry(aclRegistry).grantRole(
-            keccak256("INCENTIVE_MANAGER_ROLE"),
-            aclAdmin
-        );
-        IContractRegistry(contractRegistry).addContract(
-            keccak256("FeeRecipient"),
-            feeRecipient,
-            keccak256("1")
-        );
-        IContractRegistry(contractRegistry).updateContract(
-            keccak256("KeeperIncentive"),
-            address(keeperIncentive),
-            keccak256("2")
-        );
-        keeperIncentive.createIncentive(
-            vaultAddress,
-            1,
-            false,
-            true,
-            address(asset_),
-            1,
-            0
-        );
-        vm.stopPrank();
 
         vm.label(alice, "alice");
         vm.label(bob, "bob");
@@ -165,18 +120,6 @@ contract AbstractVaultIntegrationTest is Test {
             assertLe(actual - expected, delta, err);
         } else {
             assertEq(expected, actual, err);
-        }
-    }
-
-    function _setUpAdminAddresses(uint256 chainid) internal {
-        if (chainid == ETH_MAINNET) {
-            contractRegistry = 0x85831b53AFb86889c20aF38e654d871D8b0B7eC3;
-            aclRegistry = 0x8A41aAa4B467ea545DDDc5759cE3D35984F093f4;
-            aclAdmin = 0x92a1cB552d0e177f3A135B4c87A4160C8f2a485f;
-        } else if (chainid == POLYGON_MAINNET) {
-            contractRegistry = 0x078927eF642319963a976008A7B1161059b7E77a;
-            aclRegistry = 0x0C0991CB6e1c8456660A49aa200B71de6158b85C;
-            aclAdmin = 0x92a1cB552d0e177f3A135B4c87A4160C8f2a485f;
         }
     }
 
