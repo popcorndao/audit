@@ -7,14 +7,25 @@ import {SafeERC20Upgradeable as SafeERC20} from "openzeppelin-contracts-upgradea
 import {IERC20Upgradeable as IERC20} from "openzeppelin-contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {Math} from "openzeppelin-contracts/utils/math/Math.sol";
 import {Owned} from "./Owned.sol";
+import {SafeCastLib} from "solmate/utils/SafeCastLib.sol";
 
+/**
+ * @title   MultiRewardEscrow
+ * @author  RedVeil
+ * @notice  Permissionlessly escrow tokens for a specific period of time.
+ *
+ * Anyone can create an escrow for any token and any user.
+ * The owner can only decide to take fees on the creation of escrows with certain tokens.
+ */
 contract MultiRewardEscrow is Owned {
     using SafeERC20 for IERC20;
+    using SafeCastLib for uint256;
 
-    /*//////////////////////////////////////////////////////////////
-                            CONSTRUCTOR
-    //////////////////////////////////////////////////////////////*/
-
+    /**
+     * @notice Constructor for the Escrow contract.
+     * @param _owner Owner of the contract. Controls management functions.
+     * @param _feeRecipient Receiver of all fees.
+     */
     constructor(address _owner, address _feeRecipient) Owned(_owner) {
         feeRecipient = _feeRecipient;
     }
@@ -23,10 +34,6 @@ contract MultiRewardEscrow is Owned {
                             GET ESCROW VIEWS
     //////////////////////////////////////////////////////////////*/
 
-    /**
-     * @notice Returns all userEscrowIds
-     * @param account user
-     */
     function getEscrowIdsByUser(address account)
         external
         view
@@ -35,11 +42,6 @@ contract MultiRewardEscrow is Owned {
         return userEscrowIds[account];
     }
 
-    /**
-     * @notice Returns all userEscrowIds by token
-     * @param account user
-     * @param token rewardsToken
-     */
     function getEscrowIdsByUserAndToken(address account, IERC20 token)
         external
         view
@@ -49,8 +51,8 @@ contract MultiRewardEscrow is Owned {
     }
 
     /**
-     * @notice Returns an array of Escrows
-     * @param escrowIds array of escrow ids
+     * @notice Returns an array of Escrows.
+     * @param escrowIds Array of escrow ids.
      * @dev there is no check to ensure that all escrows are owned by the same account. Make sure to account for this either by only sending ids for a specific account or by filtering the Escrows by account later on.
      */
     function getEscrows(bytes32[] calldata escrowIds)
@@ -70,12 +72,19 @@ contract MultiRewardEscrow is Owned {
     //////////////////////////////////////////////////////////////*/
 
     struct Escrow {
+        /// @notice The escrowed token
         IERC20 token;
-        uint256 start;
-        uint256 lastUpdateTime;
-        uint256 end;
+        /// @notice Timestamp of the start of the unlock
+        uint32 start;
+        /// @notice The timestamp the unlock ends at
+        uint32 end;
+        /// @notice The timestamp the index was last updated at
+        uint32 lastUpdateTime;
+        /// @notice Initial balance of the escrow
         uint256 initialBalance;
+        /// @notice Current balance of the escrow
         uint256 balance;
+        /// @notice Owner of the escrow
         address account;
     }
 
@@ -94,23 +103,29 @@ contract MultiRewardEscrow is Owned {
         IERC20 indexed token,
         address indexed account,
         uint256 amount,
-        uint256 duration,
-        uint256 offset
+        uint32 duration,
+        uint32 offset
     );
 
     error ZeroAddress();
     error ZeroAmount();
 
     /**
-     * @notice Locks funds for escrow
-     * @dev This creates a separate escrow structure which can later be iterated upon to unlock the escrowed funds
+     * @notice Locks funds for escrow.
+     * @param token The token to be locked.
+     * @param account Recipient of the escrowed funds.
+     * @param amount Amount of tokens to be locked.
+     * @param duration Duration of the escrow. Every escrow unlocks token linearly.
+     * @param offset A cliff before the escrow starts.
+     * @dev This creates a separate escrow structure which can later be iterated upon to unlock the escrowed funds.
+     * @dev The Owner may decide to add a fee to the escrowed amount.
      */
     function lock(
         IERC20 token,
         address account,
         uint256 amount,
-        uint256 duration,
-        uint256 offset
+        uint32 duration,
+        uint32 offset
     ) external {
         if (token == IERC20(address(0))) revert ZeroAddress();
         if (account == address(0)) revert ZeroAddress();
@@ -131,13 +146,13 @@ contract MultiRewardEscrow is Owned {
             token.safeTransfer(feeRecipient, fee);
         }
 
-        uint256 start = block.timestamp + offset;
+        uint32 start = block.timestamp.safeCastTo32() + offset;
 
         escrows[id] = Escrow({
             token: token,
             start: start,
-            lastUpdateTime: start,
             end: start + duration,
+            lastUpdateTime: start,
             initialBalance: amount,
             balance: amount,
             account: account
@@ -153,28 +168,20 @@ contract MultiRewardEscrow is Owned {
                             CLAIM LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    error NotClaimable(bytes32 escrowId);
-
     event RewardsClaimed(
         IERC20 indexed token,
         address indexed account,
         uint256 amount
     );
 
-    /**
-     * @notice Returns whether the escrow is claimable
-     * @param escrowId Bytes32 escrow ID
-     */
+    error NotClaimable(bytes32 escrowId);
+
     function isClaimable(bytes32 escrowId) external view returns (bool) {
         return
             escrows[escrowId].lastUpdateTime != 0 &&
             escrows[escrowId].balance > 0;
     }
 
-    /**
-     * @notice Returns claimable amount for a given escrow
-     * @param escrowId Bytes32 escrow ID
-     */
     function getClaimableAmount(bytes32 escrowId)
         external
         view
@@ -184,11 +191,10 @@ contract MultiRewardEscrow is Owned {
     }
 
     /**
-     * @notice Claim rewards for multiple escrows
-     * @param escrowIds array of escrow ids
-     * @dev Uses the vaultIds at the specified indices of userEscrows.
-     * @dev This function is used when a user wants to claim multiple escrowVaults at once (probably most of the time)
-     * @dev prevention for gas overflow should be handled in the frontend
+     * @notice Claim rewards for multiple escrows.
+     * @param escrowIds Array of escrow ids.
+     * @dev Uses the `vaultIds` at the specified indices of `userEscrows`.
+     * @dev Prevention for gas overflow should be handled in the frontend
      */
     function claimRewards(bytes32[] memory escrowIds) external {
         for (uint256 i = 0; i < escrowIds.length; i++) {
@@ -199,7 +205,7 @@ contract MultiRewardEscrow is Owned {
             if (claimable == 0) revert NotClaimable(escrowId);
 
             escrows[escrowId].balance -= claimable;
-            escrows[escrowId].lastUpdateTime = block.timestamp;
+            escrows[escrowId].lastUpdateTime = block.timestamp.safeCastTo32();
 
             escrow.token.safeTransfer(escrow.account, claimable);
             emit RewardsClaimed(escrow.token, escrow.account, claimable);
@@ -212,14 +218,18 @@ contract MultiRewardEscrow is Owned {
         returns (uint256)
     {
         if (
-            escrow.lastUpdateTime == 0 || escrow.end == 0 || escrow.balance == 0
+            escrow.lastUpdateTime == 0 ||
+            escrow.end == 0 ||
+            escrow.balance == 0 ||
+            block.timestamp.safeCastTo32() < escrow.start
         ) {
             return 0;
         }
         return
             Math.min(
-                (escrow.balance * (block.timestamp - escrow.lastUpdateTime)) /
-                    (escrow.end - escrow.lastUpdateTime),
+                (escrow.balance *
+                    (block.timestamp - uint256(escrow.lastUpdateTime))) /
+                    (uint256(escrow.end) - uint256(escrow.lastUpdateTime)),
                 escrow.balance
             );
     }
@@ -238,16 +248,16 @@ contract MultiRewardEscrow is Owned {
     // escrowToken => feeAmount
     mapping(IERC20 => Fee) public fees;
 
+    event FeeSet(IERC20 indexed token, uint256 amount);
+
     error ArraysNotMatching(uint256 length1, uint256 length2);
     error DontGetGreedy(uint256 fee);
     error NoFee(IERC20 token);
 
-    event FeeSet(IERC20 indexed token, uint256 amount);
-
     /**
-     * @notice Set fees for multiple tokens
-     * @param tokens that we want to take fees on
-     * @param tokenFees in 1e18. (1e18 = 100%, 1e14 = 1 BPS)
+     * @notice Set fees for multiple tokens. Caller must be the owner.
+     * @param tokens Array of tokens.
+     * @param tokenFees Array of fees for `tokens` in 1e18. (1e18 = 100%, 1e14 = 1 BPS)
      */
     function setFees(IERC20[] memory tokens, uint256[] memory tokenFees)
         external

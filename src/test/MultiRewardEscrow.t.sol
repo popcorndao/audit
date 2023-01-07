@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0
 // Docgen-SOLC: 0.8.15
-pragma solidity ^0.8.15;
 
+pragma solidity ^0.8.15;
 import {Test} from "forge-std/Test.sol";
 import {Math} from "openzeppelin-contracts/utils/math/Math.sol";
 import {MockERC20} from "./utils/mocks/MockERC20.sol";
 import {MultiRewardEscrow, IERC20} from "../utils/MultiRewardEscrow.sol";
+import {SafeCastLib} from "solmate/utils/SafeCastLib.sol";
 
 contract MultiRewardEscrowTest is Test {
+    using SafeCastLib for uint256;
+
     MockERC20 token1;
     MockERC20 token2;
     IERC20 iToken1;
@@ -23,8 +26,8 @@ contract MultiRewardEscrowTest is Test {
         IERC20 indexed token,
         address indexed account,
         uint256 amount,
-        uint256 duration,
-        uint256 offset
+        uint32 duration,
+        uint32 offset
     );
 
     event RewardsClaimed(
@@ -86,9 +89,9 @@ contract MultiRewardEscrowTest is Test {
         );
 
         assertEq(address(aliceEscrows[0].token), address(token1));
-        assertEq(aliceEscrows[0].start, aliceLockTime);
-        assertEq(aliceEscrows[0].lastUpdateTime, aliceLockTime);
-        assertEq(aliceEscrows[0].end, aliceLockTime + 100);
+        assertEq(uint256(aliceEscrows[0].start), aliceLockTime);
+        assertEq(uint256(aliceEscrows[0].lastUpdateTime), aliceLockTime);
+        assertEq(uint256(aliceEscrows[0].end), aliceLockTime + 100);
         assertEq(aliceEscrows[0].balance, 10 ether);
         assertEq(aliceEscrows[0].initialBalance, 10 ether);
         assertEq(aliceEscrows[0].account, alice);
@@ -101,9 +104,9 @@ contract MultiRewardEscrowTest is Test {
 
         uint256 start = bobLockTime + 10;
         assertEq(address(bobEscrows[0].token), address(token2));
-        assertEq(bobEscrows[0].start, start);
-        assertEq(bobEscrows[0].lastUpdateTime, start);
-        assertEq(bobEscrows[0].end, start + 100);
+        assertEq(uint256(bobEscrows[0].start), start);
+        assertEq(uint256(bobEscrows[0].lastUpdateTime), start);
+        assertEq(uint256(bobEscrows[0].end), start + 100);
         assertEq(bobEscrows[0].balance, 10 ether);
         assertEq(bobEscrows[0].initialBalance, 10 ether);
         assertEq(bobEscrows[0].account, bob);
@@ -162,9 +165,9 @@ contract MultiRewardEscrowTest is Test {
             bobEscrowIds
         );
 
-        assertEq(bobEscrows[0].lastUpdateTime, bobClaimTime);
+        assertEq(uint256(bobEscrows[0].lastUpdateTime), bobClaimTime);
         assertEq(bobEscrows[0].balance, 0);
-        assertEq(bobEscrows[1].lastUpdateTime, bobClaimTime);
+        assertEq(uint256(bobEscrows[1].lastUpdateTime), bobClaimTime);
         assertEq(bobEscrows[1].balance, 9 ether);
     }
 
@@ -362,9 +365,9 @@ contract MultiRewardEscrowTest is Test {
         assertEq(escrows.length, 1);
 
         assertEq(address(escrows[0].token), address(0));
-        assertEq(escrows[0].start, 0);
-        assertEq(escrows[0].lastUpdateTime, 0);
-        assertEq(escrows[0].end, 0);
+        assertEq(uint256(escrows[0].start), 0);
+        assertEq(uint256(escrows[0].lastUpdateTime), 0);
+        assertEq(uint256(escrows[0].end), 0);
         assertEq(escrows[0].balance, 0);
         assertEq(escrows[0].initialBalance, 0);
         assertEq(escrows[0].account, address(0));

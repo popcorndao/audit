@@ -10,19 +10,33 @@ import {SafeCastLib} from "solmate/utils/SafeCastLib.sol";
 import {OwnedUpgradeable} from "./OwnedUpgradeable.sol";
 import {IMultiRewardEscrow} from "../interfaces/IMultiRewardEscrow.sol";
 
+/**
+ * @title   MultiRewardStaking
+ * @author  RedVeil
+ * @notice  See the following for the full EIP-4626 specification https://eips.ethereum.org/EIPS/eip-4626.
+ *
+ * An ERC4626 compliant implementation of a staking contract which allows rewards in multiple tokens.
+ * Only one token can be staked but rewards can be added in any token.
+ * Rewards can be paid out over time or instantly.
+ * Only the owner can add new tokens as rewards. Once added they cant be removed or changed. RewardsSpeed can only be adjusted if the rewardsSpeed is not 0.
+ * Anyone can fund existing rewards.
+ * Based on the flywheel implementation of fei-protocol https://github.com/fei-protocol/flywheel-v2
+ */
 contract MultiRewardStaking is ERC4626Upgradeable, OwnedUpgradeable {
     using SafeERC20 for IERC20;
     using SafeCastLib for uint256;
     using Math for uint256;
 
-    /*//////////////////////////////////////////////////////////////
-                            IMMUTABLES
-    //////////////////////////////////////////////////////////////*/
-
     string private _name;
     string private _symbol;
     uint8 private _decimals;
 
+    /**
+     * @notice Initialize a new MultiRewardStaking contract.
+     * @param _stakingToken The token to be staked.
+     * @param _escrow An optional escrow contract which can be used to lock rewards on claim.
+     * @param _owner Owner of the contract. Controls management functions.
+     */
     function initialize(
         IERC20 _stakingToken,
         IMultiRewardEscrow _escrow,
@@ -51,9 +65,6 @@ contract MultiRewardStaking is ERC4626Upgradeable, OwnedUpgradeable {
         INITIAL_DOMAIN_SEPARATOR = computeDomainSeparator();
     }
 
-    /**
-     * @dev Returns the name of the token.
-     */
     function name()
         public
         view
@@ -63,10 +74,6 @@ contract MultiRewardStaking is ERC4626Upgradeable, OwnedUpgradeable {
         return _name;
     }
 
-    /**
-     * @dev Returns the symbol of the token, usually a shorter version of the
-     * name.
-     */
     function symbol()
         public
         view
@@ -76,10 +83,6 @@ contract MultiRewardStaking is ERC4626Upgradeable, OwnedUpgradeable {
         return _symbol;
     }
 
-    /**
-     * @dev Returns the symbol of the token, usually a shorter version of the
-     * name.
-     */
     function decimals()
         public
         view
@@ -134,6 +137,7 @@ contract MultiRewardStaking is ERC4626Upgradeable, OwnedUpgradeable {
         return shares;
     }
 
+    /// @notice Internal deposit function used by `deposit()` and `mint()`. Accrues rewards for the `caller` and `receiver`.
     function _deposit(
         address caller,
         address receiver,
@@ -147,6 +151,7 @@ contract MultiRewardStaking is ERC4626Upgradeable, OwnedUpgradeable {
         emit Deposit(caller, receiver, assets, shares);
     }
 
+    /// @notice Internal withdraw function used by `withdraw()` and `redeem()`. Accrues rewards for the `caller` and `receiver`.
     function _withdraw(
         address caller,
         address receiver,
@@ -163,6 +168,7 @@ contract MultiRewardStaking is ERC4626Upgradeable, OwnedUpgradeable {
         emit Withdraw(caller, receiver, owner, assets, shares);
     }
 
+    /// @notice Internal transfer function used by `transfer()` and `transferFrom()`. Accrues rewards for `from` and `to`.
     function _transfer(
         address from,
         address to,
@@ -188,55 +194,68 @@ contract MultiRewardStaking is ERC4626Upgradeable, OwnedUpgradeable {
 
     event RewardsClaimed(
         address indexed user,
-        IERC20 rewardsToken,
+        IERC20 rewardToken,
         uint256 amount,
         bool escrowed
     );
 
-    error ZeroRewards(IERC20 rewardsToken);
+    error ZeroRewards(IERC20 rewardToken);
 
-    function claimRewards(address user, IERC20[] memory rewardsToken)
+    /**
+     * @notice Claim rewards for a user in any amount of rewardTokens.
+     * @param user User for which rewards should be claimed.
+     * @param _rewardTokens Array of rewardTokens for which rewards should be claimed.
+     * @dev This function will revert if any of the rewardTokens have zero rewards accrued.
+     * @dev A percentage of each reward can be locked in an escrow contract if this was previously configured.
+     */
+    function claimRewards(address user, IERC20[] memory _rewardTokens)
         external
         accrueRewards(msg.sender, user)
     {
-        for (uint8 i; i < rewardsToken.length; i++) {
-            uint256 rewardAmount = rewardsAccrued[user][rewardsToken[i]];
+        for (uint8 i; i < _rewardTokens.length; i++) {
+            uint256 rewardAmount = accruedRewards[user][_rewardTokens[i]];
 
-            if (rewardAmount == 0) revert ZeroRewards(rewardsToken[i]);
+            if (rewardAmount == 0) revert ZeroRewards(_rewardTokens[i]);
 
-            EscrowInfo memory escrowInfo = escrowInfos[rewardsToken[i]];
+            EscrowInfo memory escrowInfo = escrowInfos[_rewardTokens[i]];
 
-            if (escrowInfo.useEscrow) {
-                _lockToken(user, rewardsToken[i], rewardAmount, escrowInfo);
-                emit RewardsClaimed(user, rewardsToken[i], rewardAmount, true);
+            if (escrowInfo.escrowPercentage > 0) {
+                _lockToken(user, _rewardTokens[i], rewardAmount, escrowInfo);
+                emit RewardsClaimed(user, _rewardTokens[i], rewardAmount, true);
             } else {
-                rewardsToken[i].transfer(user, rewardAmount);
-                emit RewardsClaimed(user, rewardsToken[i], rewardAmount, false);
+                _rewardTokens[i].transfer(user, rewardAmount);
+                emit RewardsClaimed(
+                    user,
+                    _rewardTokens[i],
+                    rewardAmount,
+                    false
+                );
             }
 
-            rewardsAccrued[user][rewardsToken[i]] = 0;
+            accruedRewards[user][_rewardTokens[i]] = 0;
         }
     }
 
+    /// @notice Locks a percentage of a reward in an escrow contract. Pays out the rest to the user.
     function _lockToken(
         address user,
-        IERC20 rewardsToken,
+        IERC20 rewardToken,
         uint256 rewardAmount,
         EscrowInfo memory escrowInfo
     ) internal {
         uint256 escrowed = rewardAmount.mulDiv(
             uint256(escrowInfo.escrowPercentage),
-            1e8,
+            1e18,
             Math.Rounding.Down
         );
         uint256 payout = rewardAmount - escrowed;
 
-        rewardsToken.safeTransfer(user, payout);
+        rewardToken.safeTransfer(user, payout);
         escrow.lock(
-            rewardsToken,
+            rewardToken,
             user,
             escrowed,
-            uint256(escrowInfo.escrowDuration),
+            escrowInfo.escrowDuration,
             escrowInfo.offset
         );
     }
@@ -245,10 +264,11 @@ contract MultiRewardStaking is ERC4626Upgradeable, OwnedUpgradeable {
                     REWARDS MANAGEMENT LOGIC
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice The whole reward and accrual logic is heavily based on the Fei Protocol's Flywheel contracts.
     /// https://github.com/fei-protocol/flywheel-v2/blob/main/src/rewards/FlywheelStaticRewards.sol
     /// https://github.com/fei-protocol/flywheel-v2/blob/main/src/FlywheelCore.sol
-    struct RewardsInfo {
-        /// @notice scalar for the rewardsToken
+    struct RewardInfo {
+        /// @notice scalar for the rewardToken
         uint64 ONE;
         /// @notice Rewards per second
         uint160 rewardsPerSecond;
@@ -259,98 +279,96 @@ contract MultiRewardStaking is ERC4626Upgradeable, OwnedUpgradeable {
         uint224 index;
         /// @notice The timestamp the index was last updated at
         uint32 lastUpdatedTimestamp;
-        // /// @notice submitter of the rewards (is authorized to change rewardsSpeed later)
-        // address submitter;
     }
 
     struct EscrowInfo {
-        /// @notice useEscrow
-        bool useEscrow;
-        /// @notice Rewards per second
-        uint224 escrowDuration;
-        /// @notice Percentage of reward that gets escrowed (in 1e8)
-        uint24 escrowPercentage;
-        /// @notice Let the Escrow start later
-        uint256 offset;
+        /// @notice Percentage of reward that gets escrowed in 1e18 (1e18 = 100%, 1e14 = 1 BPS)
+        uint192 escrowPercentage;
+        /// @notice Duration of the escrow in seconds
+        uint32 escrowDuration;
+        /// @notice A cliff before the escrow starts in seconds
+        uint32 offset;
     }
 
-    IERC20[] public rewardsTokens;
+    IERC20[] public rewardTokens;
 
-    // rewardsToken -> RewardsInfo
-    mapping(IERC20 => RewardsInfo) public rewardsInfos;
-    // rewardsToken -> EscrowInfo
+    // rewardToken -> RewardInfo
+    mapping(IERC20 => RewardInfo) public rewardInfos;
+    // rewardToken -> EscrowInfo
     mapping(IERC20 => EscrowInfo) public escrowInfos;
 
-    // user => rewardsToken -> rewardsIndex
+    // user => rewardToken -> rewardsIndex
     mapping(address => mapping(IERC20 => uint256)) public userIndex;
-    // user => rewardsToken -> rewardsAccrued
-    mapping(address => mapping(IERC20 => uint256)) public rewardsAccrued;
+    // user => rewardToken -> accruedRewards
+    mapping(address => mapping(IERC20 => uint256)) public accruedRewards;
 
-    event RewardsInfoUpdate(
-        IERC20 rewardsToken,
+    event RewardInfoUpdate(
+        IERC20 rewardToken,
         uint160 rewardsPerSecond,
         uint32 rewardsEndTimestamp
     );
 
-    error RewardTokenAlreadyExist(IERC20 rewardsToken);
-    error RewardTokenDoesntExist(IERC20 rewardsToken);
+    error RewardTokenAlreadyExist(IERC20 rewardToken);
+    error RewardTokenDoesntExist(IERC20 rewardToken);
     error RewardTokenCantBeStakingToken();
     error ZeroAmount();
     error NotSubmitter(address submitter);
-    error RewardsAreDynamic(IERC20 rewardsToken);
+    error RewardsAreDynamic(IERC20 rewardToken);
     error ZeroRewardsSpeed();
 
     /**
-     @notice Adds or updates rewards of a particular staked vault.
-     @param rewardsToken The address of the rewardsToken which will be paid out to staker of this vault
-     @param rewardsPerSecond The rate of how many reawrdsToken will be paid out to all staker of this vault
-     @param amount The amount of rewardsToken that will fund this reward
-     @param useEscrow The rate of how many reawrdsToken will be paid out to all staker of this vault
-     @dev If this rewardsInfo doesnt exist yet it will be added to the array of rewardsToken of the vault
-     @dev If the rewardsInfo already exist it will accrue rewards and adds the leftover to `amount`
-     @dev The new `rewardsEndTimestamp` gets calculated based on `rewardsPerSecond` and `amount`
-  */
-    function addRewardsToken(
-        IERC20 rewardsToken,
+     * @notice Adds a new rewardToken which can be earned via staking. Caller must be owner.
+     * @param rewardToken Token that can be earned by staking.
+     * @param rewardsPerSecond The rate in which `rewardToken` will be accrued.
+     * @param amount Initial funding amount for this reward.
+     * @param useEscrow Bool if the rewards should be escrowed on claim.
+     * @param escrowPercentage The percentage of the reward that gets escrowed in 1e18. (1e18 = 100%, 1e14 = 1 BPS)
+     * @param escrowDuration The duration of the escrow.
+     * @param offset A cliff after claim before the escrow starts.
+     * @dev The `rewardsEndTimestamp` gets calculated based on `rewardsPerSecond` and `amount`.
+     * @dev If `rewardsPerSecond` is 0 the rewards will be paid out instantly. In this case `amount` must be 0.
+     * @dev If `useEscrow` is `false` the `escrowDuration`, `escrowPercentage` and `offset` will be ignored.
+     */
+    function addRewardToken(
+        IERC20 rewardToken,
         uint160 rewardsPerSecond,
         uint256 amount,
         bool useEscrow,
-        uint224 escrowDuration,
-        uint24 escrowPercentage,
-        uint256 offset
+        uint192 escrowPercentage,
+        uint32 escrowDuration,
+        uint32 offset
     ) external onlyOwner {
-        if (asset() == address(rewardsToken))
+        if (asset() == address(rewardToken))
             revert RewardTokenCantBeStakingToken();
 
-        RewardsInfo memory rewards = rewardsInfos[rewardsToken];
+        RewardInfo memory rewards = rewardInfos[rewardToken];
         if (rewards.lastUpdatedTimestamp > 0)
-            revert RewardTokenAlreadyExist(rewardsToken);
+            revert RewardTokenAlreadyExist(rewardToken);
 
-        // Transfer additional rewardsToken to fund rewards of this vault
         if (amount > 0) {
             if (rewardsPerSecond == 0) revert ZeroRewardsSpeed();
-            rewardsToken.safeTransferFrom(msg.sender, address(this), amount);
+            rewardToken.safeTransferFrom(msg.sender, address(this), amount);
         }
 
-        // Add the rewardsToken to all existing rewardsToken
-        rewardsTokens.push(rewardsToken);
+        // Add the rewardToken to all existing rewardToken
+        rewardTokens.push(rewardToken);
 
-        escrowInfos[rewardsToken] = EscrowInfo({
-            useEscrow: useEscrow,
-            escrowDuration: escrowDuration,
-            escrowPercentage: escrowPercentage,
-            offset: offset
-        });
-        if (useEscrow)
-            rewardsToken.safeApprove(address(escrow), type(uint256).max);
+        if (useEscrow) {
+            escrowInfos[rewardToken] = EscrowInfo({
+                escrowPercentage: escrowPercentage,
+                escrowDuration: escrowDuration,
+                offset: offset
+            });
+            rewardToken.safeApprove(address(escrow), type(uint256).max);
+        }
 
-        uint64 ONE = (10**IERC20Metadata(address(rewardsToken)).decimals())
+        uint64 ONE = (10**IERC20Metadata(address(rewardToken)).decimals())
             .safeCastTo64();
         uint32 rewardsEndTimestamp = rewardsPerSecond == 0
             ? block.timestamp.safeCastTo32()
             : _calcRewardsEnd(0, rewardsPerSecond, amount);
 
-        rewardsInfos[rewardsToken] = RewardsInfo({
+        rewardInfos[rewardToken] = RewardInfo({
             ONE: ONE,
             rewardsPerSecond: rewardsPerSecond,
             rewardsEndTimestamp: rewardsEndTimestamp,
@@ -358,28 +376,34 @@ contract MultiRewardStaking is ERC4626Upgradeable, OwnedUpgradeable {
             lastUpdatedTimestamp: block.timestamp.safeCastTo32()
         });
 
-        emit RewardsInfoUpdate(
-            rewardsToken,
+        emit RewardInfoUpdate(
+            rewardToken,
             rewardsPerSecond,
             rewardsEndTimestamp
         );
     }
 
-    function changeRewardSpeed(IERC20 rewardsToken, uint160 rewardsPerSecond)
+    /**
+     * @notice Changes rewards speed for a rewardToken. This works only for rewards that accrue over time. Caller must be owner.
+     * @param rewardToken Token that can be earned by staking.
+     * @param rewardsPerSecond The rate in which `rewardToken` will be accrued.
+     * @dev The `rewardsEndTimestamp` gets calculated based on `rewardsPerSecond` and `amount`.
+     */
+    function changeRewardSpeed(IERC20 rewardToken, uint160 rewardsPerSecond)
         external
         onlyOwner
     {
-        RewardsInfo memory rewards = rewardsInfos[rewardsToken];
+        RewardInfo memory rewards = rewardInfos[rewardToken];
 
         if (rewardsPerSecond == 0) revert ZeroAmount();
         if (rewards.lastUpdatedTimestamp == 0)
-            revert RewardTokenDoesntExist(rewardsToken);
+            revert RewardTokenDoesntExist(rewardToken);
         if (rewards.rewardsPerSecond == 0)
-            revert RewardsAreDynamic(rewardsToken);
+            revert RewardsAreDynamic(rewardToken);
 
-        _accrueRewards(rewardsToken, _accrueStatic(rewards));
+        _accrueRewards(rewardToken, _accrueStatic(rewards));
 
-        uint256 remainder = rewardsToken.balanceOf(address(this));
+        uint256 remainder = rewardToken.balanceOf(address(this));
 
         uint32 prevEndTime = rewards.rewardsEndTimestamp;
         uint32 rewardsEndTimestamp = _calcRewardsEnd(
@@ -389,36 +413,36 @@ contract MultiRewardStaking is ERC4626Upgradeable, OwnedUpgradeable {
             rewardsPerSecond,
             remainder
         );
-        rewardsInfos[rewardsToken].rewardsPerSecond = rewardsPerSecond;
-        rewardsInfos[rewardsToken].rewardsEndTimestamp = rewardsEndTimestamp;
+        rewardInfos[rewardToken].rewardsPerSecond = rewardsPerSecond;
+        rewardInfos[rewardToken].rewardsEndTimestamp = rewardsEndTimestamp;
     }
 
     /**
-     @notice Funds rewards of a vault staking program
-     @param rewardsToken The address of the rewardsToken which will be paid out to staker of this vault
-     @param amount The amount of rewardsToken that will fund this reward
-     @dev Will revert if there is no rewardsInfo for this vault/rewardsToken combination
-     @dev The new `rewardsEndTimestamp` gets calculated based on `rewardsPerSecond` and `amount`
-  */
-    function fundReward(IERC20 rewardsToken, uint256 amount) external {
+     * @notice Funds rewards for a rewardToken.
+     * @param rewardToken Token that can be earned by staking.
+     * @param amount The amount of rewardToken that will fund this reward.
+     * @dev The `rewardsEndTimestamp` gets calculated based on `rewardsPerSecond` and `amount`.
+     * @dev If `rewardsPerSecond` is 0 the rewards will be paid out instantly.
+     */
+    function fundReward(IERC20 rewardToken, uint256 amount) external {
         if (amount == 0) revert ZeroAmount();
 
-        // Cache RewardsInfo
-        RewardsInfo memory rewards = rewardsInfos[rewardsToken];
+        // Cache RewardInfo
+        RewardInfo memory rewards = rewardInfos[rewardToken];
 
         // Make sure that the reward exists
         if (rewards.lastUpdatedTimestamp == 0)
-            revert RewardTokenDoesntExist(rewardsToken);
+            revert RewardTokenDoesntExist(rewardToken);
 
-        // Transfer additional rewardsToken to fund rewards of this vault
-        rewardsToken.safeTransferFrom(msg.sender, address(this), amount);
+        // Transfer additional rewardToken to fund rewards of this vault
+        rewardToken.safeTransferFrom(msg.sender, address(this), amount);
 
         uint256 accrued = rewards.rewardsPerSecond == 0
             ? amount
             : _accrueStatic(rewards);
 
-        // Update the index of rewardsInfo before updating the rewardsInfo
-        _accrueRewards(rewardsToken, accrued);
+        // Update the index of rewardInfo before updating the rewardInfo
+        _accrueRewards(rewardToken, accrued);
         uint32 rewardsEndTimestamp = rewards.rewardsEndTimestamp;
         if (rewards.rewardsPerSecond > 0) {
             rewardsEndTimestamp = _calcRewardsEnd(
@@ -426,16 +450,15 @@ contract MultiRewardStaking is ERC4626Upgradeable, OwnedUpgradeable {
                 rewards.rewardsPerSecond,
                 amount
             );
-            rewardsInfos[rewardsToken]
-                .rewardsEndTimestamp = rewardsEndTimestamp;
+            rewardInfos[rewardToken].rewardsEndTimestamp = rewardsEndTimestamp;
         }
 
-        rewardsInfos[rewardsToken].lastUpdatedTimestamp = block
+        rewardInfos[rewardToken].lastUpdatedTimestamp = block
             .timestamp
             .safeCastTo32();
 
-        emit RewardsInfoUpdate(
-            rewardsToken,
+        emit RewardInfoUpdate(
+            rewardToken,
             rewards.rewardsPerSecond,
             rewardsEndTimestamp
         );
@@ -455,32 +478,35 @@ contract MultiRewardStaking is ERC4626Upgradeable, OwnedUpgradeable {
     }
 
     function getAllRewardsTokens() external view returns (IERC20[] memory) {
-        return rewardsTokens;
+        return rewardTokens;
     }
 
     /*//////////////////////////////////////////////////////////////
                       REWARDS ACCRUAL LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /// https://github.com/fei-protocol/flywheel-v2/blob/main/src/rewards/FlywheelStaticRewards.sol
+    /// @notice Accrue rewards for up to 2 users for all available reward tokens.
     modifier accrueRewards(address _caller, address _receiver) {
-        IERC20[] memory _rewardsTokens = rewardsTokens;
-        for (uint8 i; i < _rewardsTokens.length; i++) {
-            IERC20 rewardToken = _rewardsTokens[i];
-            RewardsInfo memory rewards = rewardsInfos[rewardToken];
+        IERC20[] memory _rewardTokens = rewardTokens;
+        for (uint8 i; i < _rewardTokens.length; i++) {
+            IERC20 rewardToken = _rewardTokens[i];
+            RewardInfo memory rewards = rewardInfos[rewardToken];
 
             if (rewards.rewardsPerSecond > 0)
                 _accrueRewards(rewardToken, _accrueStatic(rewards));
             _accrueUser(_receiver, rewardToken);
 
             // If a deposit/withdraw operation gets called for another user we should accrue for both of them to avoid potential issues like in the Convex-Vulnerability
-            // Gas cost for a comparison is currently 3. Therefore its much cheaper to check this every loop than checking it once and running a second loop. <-- is that true?
             if (_receiver != _caller) _accrueUser(_caller, rewardToken);
         }
         _;
     }
 
-    function _accrueStatic(RewardsInfo memory rewards)
+    /**
+     * @notice Accrue rewards over time.
+     * @dev Based on https://github.com/fei-protocol/flywheel-v2/blob/main/src/rewards/FlywheelStaticRewards.sol
+     */
+    function _accrueStatic(RewardInfo memory rewards)
         internal
         view
         returns (uint256 accrued)
@@ -497,7 +523,8 @@ contract MultiRewardStaking is ERC4626Upgradeable, OwnedUpgradeable {
         accrued = uint256(rewards.rewardsPerSecond * elapsed);
     }
 
-    function _accrueRewards(IERC20 _rewardsToken, uint256 accrued) internal {
+    /// @notice Accrue global rewards for a rewardToken
+    function _accrueRewards(IERC20 _rewardToken, uint256 accrued) internal {
         uint256 supplyTokens = totalSupply();
         uint224 deltaIndex;
         if (supplyTokens != 0)
@@ -509,35 +536,36 @@ contract MultiRewardStaking is ERC4626Upgradeable, OwnedUpgradeable {
                 )
                 .safeCastTo224();
 
-        rewardsInfos[_rewardsToken].index += deltaIndex;
-        rewardsInfos[_rewardsToken].lastUpdatedTimestamp = block
+        rewardInfos[_rewardToken].index += deltaIndex;
+        rewardInfos[_rewardToken].lastUpdatedTimestamp = block
             .timestamp
             .safeCastTo32();
     }
 
-    function _accrueUser(address _user, IERC20 _rewardsToken) internal {
-        RewardsInfo memory rewards = rewardsInfos[_rewardsToken];
+    /// @notice Sync a user's rewards for a rewardToken with the global reward index for that token
+    function _accrueUser(address _user, IERC20 _rewardToken) internal {
+        RewardInfo memory rewards = rewardInfos[_rewardToken];
 
-        uint256 oldIndex = userIndex[_user][_rewardsToken];
+        uint256 oldIndex = userIndex[_user][_rewardToken];
 
-        // if user hasn't yet accrued rewards, grant them interest from the strategy beginning if they have a balance
-        // zero balances will have no effect other than syncing to global index
+        // If user hasn't yet accrued rewards, grant them interest from the strategy beginning if they have a balance
+        // Zero balances will have no effect other than syncing to global index
         if (oldIndex == 0) {
             oldIndex = rewards.ONE;
         }
 
         uint256 deltaIndex = rewards.index - oldIndex;
 
-        // accumulate rewards by multiplying user tokens by rewardsPerToken index and adding on unclaimed
+        // Accumulate rewards by multiplying user tokens by rewardsPerToken index and adding on unclaimed
         uint256 supplierDelta = balanceOf(_user).mulDiv(
             deltaIndex,
             uint256(rewards.ONE),
             Math.Rounding.Down
         );
 
-        userIndex[_user][_rewardsToken] = rewards.index;
+        userIndex[_user][_rewardToken] = rewards.index;
 
-        rewardsAccrued[_user][_rewardsToken] += supplierDelta;
+        accruedRewards[_user][_rewardToken] += supplierDelta;
     }
 
     /*//////////////////////////////////////////////////////////////

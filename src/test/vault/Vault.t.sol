@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0
 // Docgen-SOLC: 0.8.15
+
 pragma solidity ^0.8.15;
 
 import {Test} from "forge-std/Test.sol";
-
 import {MockERC20} from "../utils/mocks/MockERC20.sol";
 import {MockERC4626} from "../utils/mocks/MockERC4626.sol";
 import {Vault} from "../../vault/Vault.sol";

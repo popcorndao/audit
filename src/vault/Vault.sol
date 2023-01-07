@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0
 // Docgen-SOLC: 0.8.15
+
 pragma solidity ^0.8.15;
 
 import {SafeERC20Upgradeable as SafeERC20} from "openzeppelin-contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
@@ -12,6 +13,16 @@ import {MathUpgradeable as Math} from "openzeppelin-contracts-upgradeable/utils/
 import {OwnedUpgradeable} from "../utils/OwnedUpgradeable.sol";
 import {ERC20Upgradeable} from "openzeppelin-contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 
+/**
+ * @title   Vault
+ * @author  RedVeil
+ * @notice  See the following for the full EIP-4626 specification https://eips.ethereum.org/EIPS/eip-4626.
+ *
+ * A simple ERC4626-Implementation of a Vault.
+ * The vault delegates any actual protocol interaction to an adapter.
+ * It allows for multiple type of fees which are taken by issuing new vault shares.
+ * Adapter and fees can be changed by the owner after a ragequit time.
+ */
 contract Vault is
     ERC20Upgradeable,
     ReentrancyGuardUpgradeable,
@@ -20,10 +31,6 @@ contract Vault is
 {
     using SafeERC20 for IERC20;
     using Math for uint256;
-
-    /*//////////////////////////////////////////////////////////////
-                               IMMUTABLES
-    //////////////////////////////////////////////////////////////*/
 
     uint256 constant SECONDS_PER_YEAR = 365.25 days;
     uint256 internal ONE;
@@ -39,12 +46,12 @@ contract Vault is
     error InvalidAdapter();
 
     /**
-     * @notice Initialize a new Vault
+     * @notice Initialize a new Vault.
      * @param asset_ Underlying Asset which users will deposit.
      * @param adapter_ Adapter which will be used to interact with the wrapped protocol.
-     * @param fees_ Desired fees in 1e18 (e.g. 100% = 1e18 or 1 BPS = 1e12)
+     * @param fees_ Desired fees in 1e18. (1e18 = 100%, 1e14 = 1 BPS)
      * @param feeRecipient_ Recipient of all vault fees. (Must not be zero address)
-     * @param owner Vault creator.
+     * @param owner Owner of the contract. Controls management functions.
      * @dev This function is called by the factory contract when deploying a new vault.
      * @dev Usually the adapter should already be pre configured. Otherwise a new one can only be added after a ragequit time.
      */
@@ -120,12 +127,6 @@ contract Vault is
 
     error InvalidReceiver();
 
-    /**
-     * @notice Deposit exactly `assets` amount of tokens, issuing vault shares to caller.
-     * @param assets Quantity of tokens to deposit.
-     * @return Quantity of vault shares issued to caller.
-     * @dev This s `deposit(uint256)` from the parent `AffiliateToken` contract. It therefore needs to be public since the `AffiliateToken` function is public
-     */
     function deposit(uint256 assets) public returns (uint256) {
         return deposit(assets, msg.sender);
     }
@@ -134,7 +135,7 @@ contract Vault is
      * @notice Deposit exactly `assets` amount of tokens, issuing vault shares to `receiver`.
      * @param assets Quantity of tokens to deposit.
      * @param receiver Receiver of issued vault shares.
-     * @return shares of the vault issued to `receiver`.
+     * @return shares Quantity of vault shares issued to `receiver`.
      */
     function deposit(uint256 assets, address receiver)
         public
@@ -162,22 +163,15 @@ contract Vault is
         emit Deposit(msg.sender, receiver, assets, shares);
     }
 
-    /**
-     * @notice Mint exactly `shares` vault shares to `msg.sender`. Caller must approve a sufficient number of underlying
-     *   `asset` tokens to mint the requested quantity of vault shares.
-     * @param shares Quantity of shares to mint.
-     * @return assets of underlying that have been deposited.
-     */
     function mint(uint256 shares) external returns (uint256) {
         return mint(shares, msg.sender);
     }
 
     /**
-     * @notice Mint exactly `shares` vault shares to `receiver`. Caller must approve a sufficient number of underlying
-     *   `asset` tokens to mint the requested quantity of vault shares.
+     * @notice Mint exactly `shares` vault shares to `receiver`, taking the necessary amount of `asset` from the caller.
      * @param shares Quantity of shares to mint.
      * @param receiver Receiver of issued vault shares.
-     * @return assets of underlying that have been deposited.
+     * @return assets Quantity of assets deposited by caller.
      */
     function mint(uint256 shares, address receiver)
         public
@@ -209,22 +203,16 @@ contract Vault is
         emit Deposit(msg.sender, receiver, assets, shares);
     }
 
-    /**
-     * @notice Burn shares from caller in exchange for exactly `assets` amount of underlying token.
-     * @param assets Quantity of underlying `asset` token to withdraw.
-     * @return shares of vault burned in exchange for underlying `asset` tokens.
-     * @dev This s `withdraw(uint256)` from the parent `AffiliateToken` contract.
-     */
     function withdraw(uint256 assets) public returns (uint256) {
         return withdraw(assets, msg.sender, msg.sender);
     }
 
     /**
-     * @notice Burn shares from caller in exchange for `assets` amount of underlying token. Send underlying to caller.
+     * @notice Burn shares from `owner` in exchange for `assets` amount of underlying token.
      * @param assets Quantity of underlying `asset` token to withdraw.
      * @param receiver Receiver of underlying token.
      * @param owner Owner of burned vault shares.
-     * @return shares of vault burned in exchange for underlying `asset` tokens.
+     * @return shares Quantity of vault shares burned in exchange for `assets`.
      */
     function withdraw(
         uint256 assets,
@@ -257,21 +245,16 @@ contract Vault is
         emit Withdraw(msg.sender, receiver, owner, assets, shares);
     }
 
-    /**
-     * @notice Burn exactly `shares` vault shares from owner and send underlying `asset` tokens to `receiver`.
-     * @param shares Quantity of vault shares to exchange for underlying tokens.
-     * @return assets of underlying sent to `receiver`.
-     */
     function redeem(uint256 shares) external returns (uint256) {
         return redeem(shares, msg.sender, msg.sender);
     }
 
     /**
-     * @notice Burn exactly `shares` vault shares from owner and send underlying `asset` tokens to `receiver`.
+     * @notice Burn exactly `shares` vault shares from `owner` and send underlying `asset` tokens to `receiver`.
      * @param shares Quantity of vault shares to exchange for underlying tokens.
      * @param receiver Receiver of underlying tokens.
      * @param owner Owner of burned vault shares.
-     * @return assets of underlying sent to `receiver`.
+     * @return assets Quantity of `asset` sent to `receiver`.
      */
     function redeem(
         uint256 shares,
@@ -304,9 +287,7 @@ contract Vault is
                             ACCOUNTING LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /**
-     * @return Total amount of underlying `asset` token managed by vault.
-     */
+    /// @return Total amount of underlying `asset` token managed by vault. Delegates to adapter.
     function totalAssets() public view returns (uint256) {
         return adapter.convertToAssets(adapter.balanceOf(address(this)));
     }
@@ -415,30 +396,22 @@ contract Vault is
                      DEPOSIT/WITHDRAWAL LIMIT LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /**
-     * @return Maximum amount of underlying `asset` token that may be deposited for a given address.
-     */
+    /// @return Maximum amount of underlying `asset` token that may be deposited for a given address. Delegates to adapter.
     function maxDeposit(address caller) public view returns (uint256) {
         return adapter.maxDeposit(caller);
     }
 
-    /**
-     * @return Maximum amount of vault shares that may be minted to given address.
-     */
+    /// @return Maximum amount of vault shares that may be minted to given address. Delegates to adapter.
     function maxMint(address caller) external view returns (uint256) {
         return adapter.maxMint(caller);
     }
 
-    /**
-     * @return Maximum amount of underlying `asset` token that can be withdrawn by `caller` address.
-     */
+    /// @return Maximum amount of underlying `asset` token that can be withdrawn by `caller` address. Delegates to adapter.
     function maxWithdraw(address caller) external view returns (uint256) {
         return adapter.maxWithdraw(caller);
     }
 
-    /**
-     * @return Maximum amount of shares that may be redeemed by `caller` address.
-     */
+    /// @return Maximum amount of shares that may be redeemed by `caller` address. Delegates to adapter.
     function maxRedeem(address caller) external view returns (uint256) {
         return adapter.maxRedeem(caller);
     }
@@ -494,15 +467,14 @@ contract Vault is
 
     error InsufficientWithdrawalAmount(uint256 amount);
 
-    /**
-     * @notice Collect management and performance fees and update vault share high water mark.
-     */
+    /// @notice Minimal function to call `takeFees` modifier.
     function takeManagementAndPerformanceFees()
         external
         nonReentrant
         takeFees
     {}
 
+    /// @notice Collect management and performance fees and update vault share high water mark.
     modifier takeFees() {
         uint256 managementFee = accruedManagementFee();
         uint256 totalFee = managementFee + accruedPerformanceFee();
@@ -550,9 +522,9 @@ contract Vault is
     error NotPassedQuitPeriod(uint256 quitPeriod);
 
     /**
-     * @notice Propose new fees for this vault. Caller must have VAULTS_CONTROlLER from ACLRegistry.
-     * @param newFees New `feeStructure`.
-     * @dev Value is in 1e18, e.g. 100% = 1e18 - 1 BPS = 1e12
+     * @notice Propose new fees for this vault. Caller must be owner.
+     * @param newFees Fees for depositing, withdrawal, management and performance in 1e18.
+     * @dev Fees can be 0 but never 1e18 (1e18 = 100%, 1e14 = 1 BPS)
      */
     function proposeFees(FeeStructure memory newFees) external onlyOwner {
         if (
@@ -568,9 +540,7 @@ contract Vault is
         emit NewFeesProposed(newFees, block.timestamp);
     }
 
-    /**
-     * @notice Set fees in BPS to proposed fees from proposeNewFees function
-     */
+    /// @notice Change fees to the previously proposed fees after the quit period has passed.
     function changeFees() external {
         if (block.timestamp < proposedFeeTime + quitPeriod)
             revert NotPassedQuitPeriod(quitPeriod);
@@ -580,7 +550,9 @@ contract Vault is
     }
 
     /**
-     * @notice Change feeRecipient. Caller must have VAULTS_CONTROLLER from ACLRegistry.
+     * @notice Change `feeRecipient`. Caller must be Owner.
+     * @param _feeRecipient The new fee recipient.
+     * @dev Accrued fees wont be transferred to the new feeRecipient.
      */
     function setFeeRecipient(address _feeRecipient) external onlyOwner {
         if (_feeRecipient == address(0)) revert InvalidFeeRecipient();
@@ -604,9 +576,8 @@ contract Vault is
     error VaultAssetMismatchNewAdapterAsset();
 
     /**
-     * @notice Propose a new adapter for this vault. Caller must have VAULTS_CONTROlLER from ACLRegistry.
+     * @notice Propose a new adapter for this vault. Caller must be Owner.
      * @param newAdapter A new ERC4626 that should be used as a yield adapter for this asset.
-     * @dev The new adapter can be active 3 Days by default after proposal. This allows user to rage quit.
      */
     function proposeAdapter(IERC4626 newAdapter) external onlyOwner {
         if (newAdapter.asset() != address(asset))
@@ -619,7 +590,7 @@ contract Vault is
     }
 
     /**
-     * @notice Set a new Adapter for this Vault.
+     * @notice Set a new Adapter for this Vault after the quit period has passed.
      * @dev This migration function will remove all assets from the old Vault and move them into the new vault
      * @dev Additionally it will zero old allowances and set new ones
      * @dev Last we update HWM and assetsCheckpoint for fees to make sure they adjust to the new adapter
@@ -656,9 +627,8 @@ contract Vault is
     error InvalidQuitPeriod();
 
     /**
-     * @notice Set a quitPeriod for rage quitting after new adapter or fees are proposed. Caller must have VAULTS_CONTROlLER from ACLRegistry.
-     * @param _quitPeriod time to rage quit after proposal, if not set defaults to 3 days
-     * @dev The new adapter can be active 3 Days by default after proposal. This allows user to rage quit.
+     * @notice Set a quitPeriod for rage quitting after new adapter or fees are proposed. Caller must be Owner.
+     * @param _quitPeriod Time to rage quit after proposal.
      */
     function setQuitPeriod(uint256 _quitPeriod) external onlyOwner {
         if (_quitPeriod < 1 days || _quitPeriod > 7 days)
@@ -673,16 +643,12 @@ contract Vault is
                           PAUSING LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /**
-     * @notice Pause deposits. Caller must have VAULTS_CONTROLLER from ACLRegistry.
-     */
+    /// @notice Pause deposits. Caller must be Owner.
     function pause() external onlyOwner {
         _pause();
     }
 
-    /**
-     * @notice Unpause deposits. Caller must have VAULTS_CONTROLLER from ACLRegistry.
-     */
+    /// @notice Unpause deposits. Caller must be Owner.
     function unpause() external onlyOwner {
         _unpause();
     }

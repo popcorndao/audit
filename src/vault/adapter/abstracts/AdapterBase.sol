@@ -13,12 +13,15 @@ import {EIP165} from "../../../utils/EIP165.sol";
 import {OnlyStrategy} from "./OnlyStrategy.sol";
 import {OwnedUpgradeable} from "../../../utils/OwnedUpgradeable.sol";
 
-/*
- * @title Beefy ERC4626 Contract
- * @notice ERC4626 wrapper for beefy vaults
- * @author RedVeil
+/**
+ * @title   AdapterBase
+ * @author  RedVeil
+ * @notice  See the following for the full EIP-4626 specification https://eips.ethereum.org/EIPS/eip-4626.
  *
- * Wraps https://github.com/beefyfinance/beefy-contracts/blob/master/contracts/BIFI/vaults/BeefyVaultV6.sol
+ * The ERC4626 compliant base contract for all adapter contracts.
+ * It allows interacting with an underlying protocol.
+ * All specific interactions for the underlying protocol need to be overriden in the actual implementation.
+ * The adapter can be initialized with a strategy that can perform additional operations. (Leverage, Compounding, etc.)
  */
 contract AdapterBase is
     ERC4626Upgradeable,
@@ -29,18 +32,24 @@ contract AdapterBase is
 {
     using SafeERC20 for IERC20;
     using Math for uint256;
-    /*//////////////////////////////////////////////////////////////
-                               IMMUTABLES
-    //////////////////////////////////////////////////////////////*/
 
     uint8 internal _decimals;
 
-    error NotFactory();
     error StrategySetupFailed();
 
     /**
-     @notice Initializes the Vault.
-    */
+     * @notice Initialize a new Adapter.
+     * @param popERC4626InitData Encoded data for the base adapter initialization.
+     * @dev `asset` - The underlying asset
+     * @dev `_owner` - Owner of the contract. Controls management functions.
+     * @dev `_strategy` - An optional strategy to enrich the adapter with additional functionality.
+     * @dev `_harvestCooldown` - Cooldown period between harvests.
+     * @dev `_requiredSigs` - Function signatures required by the strategy (EIP-165)
+     * @dev `_strategyConfig` - Additional data which can be used by the strategy on `harvest()`
+     * @dev This function is called by the factory contract when deploying a new vault.
+     * @dev Each Adapter implementation should implement checks to make sure that the adapter is wrapping the underlying protocol correctly.
+     * @dev If a strategy is provided, it will be verified to make sure it implements the required functions.
+     */
     function __AdapterBase_init(bytes memory popERC4626InitData)
         public
         initializer
@@ -84,84 +93,12 @@ contract AdapterBase is
     }
 
     /*//////////////////////////////////////////////////////////////
-                            ACCOUNTING LOGIC
-    //////////////////////////////////////////////////////////////*/
-
-    function totalAssets() public view virtual override returns (uint256) {
-        // Return assets in adapter if paused
-        // Otherwise return assets held by the adapter in underlying protocol
-    }
-
-    function convertToUnderlyingShares(uint256 assets, uint256 shares)
-        public
-        view
-        virtual
-        returns (uint256)
-    {
-        // OPTIONAL - convert assets or shares into underlying shares if those are needed to deposit/withdraw in the underlying protocol
-    }
-
-    /** @dev See {IERC4262-maxDeposit}. */
-    function maxDeposit(address)
-        public
-        view
-        virtual
-        override
-        returns (uint256)
-    {
-        return paused() ? 0 : type(uint256).max;
-    }
-
-    /** @dev See {IERC4262-maxMint}. */
-    function maxMint(address) public view virtual override returns (uint256) {
-        return paused() ? 0 : type(uint256).max;
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                     DEPOSIT/WITHDRAWAL LIMIT LOGIC
-    //////////////////////////////////////////////////////////////*/
-
-    function previewDeposit(uint256 assets)
-        public
-        view
-        virtual
-        override
-        returns (uint256)
-    {
-        return paused() ? 0 : _convertToShares(assets, Math.Rounding.Down);
-    }
-
-    function previewMint(uint256 shares)
-        public
-        view
-        virtual
-        override
-        returns (uint256)
-    {
-        return paused() ? 0 : _convertToAssets(shares, Math.Rounding.Up);
-    }
-
-    function _convertToShares(uint256 assets, Math.Rounding rounding)
-        internal
-        view
-        virtual
-        override
-        returns (uint256 shares)
-    {
-        uint256 _totalSupply = totalSupply();
-        uint256 _totalAssets = totalAssets();
-        return
-            (assets == 0 || _totalSupply == 0 || _totalAssets == 0)
-                ? assets
-                : assets.mulDiv(_totalSupply, _totalAssets, rounding);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                          INTERNAL HOOKS LOGIC
+                        DEPOSIT/WITHDRAWAL LOGIC
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @dev Deposit/mint common workflow.
+     * @notice Deposit `assets` into the underlying protocol and mints vault shares to `receiver`.
+     * @dev Executes harvest if `harvestCooldown` is passed since last invocation.
      */
     function _deposit(
         address caller,
@@ -169,13 +106,6 @@ contract AdapterBase is
         uint256 assets,
         uint256 shares
     ) internal virtual override {
-        // If _asset is ERC777, `transferFrom` can trigger a reenterancy BEFORE the transfer happens through the
-        // `tokensToSend` hook. On the other hand, the `tokenReceived` hook, that is triggered after the transfer,
-        // calls the vault, which is assumed not malicious.
-        //
-        // Conclusion: we need to do the transfer before we mint so that any reentrancy would happen before the
-        // assets are transferred and before the shares are minted, which is a valid state.
-        // slither-disable-next-line reentrancy-no-eth
         IERC20(asset()).safeTransferFrom(caller, address(this), assets);
 
         _protocolDeposit(assets, shares);
@@ -187,13 +117,9 @@ contract AdapterBase is
         emit Deposit(caller, receiver, assets, shares);
     }
 
-    function _protocolDeposit(uint256 assets, uint256 shares) internal virtual {
-        // OPTIONAL - convertIntoUnderlyingShares(assets,shares)
-        // deposit into underlying protocol
-    }
-
     /**
-     * @dev Withdraw/redeem common workflow.
+     * @notice Withdraws `assets` from the underlying protocol and burns vault shares from `owner`.
+     * @dev Executes harvest if `harvestCooldown` is passed since last invocation.
      */
     function _withdraw(
         address caller,
@@ -210,12 +136,6 @@ contract AdapterBase is
             _protocolWithdraw(assets, shares);
         }
 
-        // If _asset is ERC777, `transfer` can trigger a reentrancy AFTER the transfer happens through the
-        // `tokensReceived` hook. On the other hand, the `tokensToSend` hook, that is triggered before the transfer,
-        // calls the vault, which is assumed not malicious.
-        //
-        // Conclusion: we need to do the transfer after the burn so that any reentrancy would happen after the
-        // shares are burned and after the assets are transferred, which is a valid state.
         _burn(owner, shares);
 
         IERC20(asset()).safeTransfer(receiver, assets);
@@ -225,25 +145,285 @@ contract AdapterBase is
         emit Withdraw(caller, receiver, owner, assets, shares);
     }
 
+    /*//////////////////////////////////////////////////////////////
+                            ACCOUNTING LOGIC
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Total amount of underlying `asset` token managed by adapter.
+     * @dev Return assets held by adapter if paused.
+     */
+    function totalAssets() public view virtual override returns (uint256) {}
+
+    /**
+     * @notice Convert either `assets` or `shares` into underlying shares
+     * @dev This is an optional function for underlying protocols that require deposit/withdrawal amounts in their shares.
+     */
+    function convertToUnderlyingShares(uint256 assets, uint256 shares)
+        public
+        view
+        virtual
+        returns (uint256)
+    {}
+
+    /**
+     * @notice Simulate the effects of a deposit at the current block, given current on-chain conditions.
+     * @dev Return 0 if paused since no further deposits are allowed.
+     * @dev Override this function if the underlying protocol has a unique deposit logic and/or deposit fees.
+     */
+    function previewDeposit(uint256 assets)
+        public
+        view
+        virtual
+        override
+        returns (uint256)
+    {
+        return paused() ? 0 : _convertToShares(assets, Math.Rounding.Down);
+    }
+
+    /**
+     * @notice Simulate the effects of a mint at the current block, given current on-chain conditions.
+     * @dev Return 0 if paused since no further deposits are allowed.
+     * @dev Override this function if the underlying protocol has a unique deposit logic and/or deposit fees.
+     */
+    function previewMint(uint256 shares)
+        public
+        view
+        virtual
+        override
+        returns (uint256)
+    {
+        return paused() ? 0 : _convertToAssets(shares, Math.Rounding.Up);
+    }
+
+    /**
+     * @notice Amount of shares the vault would exchange for given amount of assets, in an ideal scenario.
+     * @dev Added totalAssets() check to prevent division by zero in case of rounding issues. (off-by-one issue)
+     */
+    function _convertToShares(uint256 assets, Math.Rounding rounding)
+        internal
+        view
+        virtual
+        override
+        returns (uint256 shares)
+    {
+        uint256 _totalSupply = totalSupply();
+        uint256 _totalAssets = totalAssets();
+        return
+            (assets == 0 || _totalSupply == 0 || _totalAssets == 0)
+                ? assets
+                : assets.mulDiv(_totalSupply, _totalAssets, rounding);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                     DEPOSIT/WITHDRAWAL LIMIT LOGIC
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @return Maximum amount of vault shares that may be minted to given address. Delegates to adapter.
+     * @dev Return 0 if paused since no further deposits are allowed.
+     * @dev Override this function if the underlying protocol has a unique deposit logic and/or deposit fees.
+     */
+    function maxDeposit(address)
+        public
+        view
+        virtual
+        override
+        returns (uint256)
+    {
+        return paused() ? 0 : type(uint256).max;
+    }
+
+    /**
+     * @return Maximum amount of vault shares that may be minted to given address. Delegates to adapter.
+     * @dev Return 0 if paused since no further deposits are allowed.
+     * @dev Override this function if the underlying protocol has a unique deposit logic and/or deposit fees.
+     */
+    function maxMint(address) public view virtual override returns (uint256) {
+        return paused() ? 0 : type(uint256).max;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            STRATEGY LOGIC
+    //////////////////////////////////////////////////////////////*/
+
+    IStrategy public strategy;
+    bytes public strategyConfig;
+    uint256 public harvestCooldown;
+
+    event Harvested();
+
+    /**
+     * @notice Execute Strategy and take fees.
+     * @dev Delegatecall to strategy's harvest() function. All necessary data is passed via `strategyConfig`.
+     * @dev Delegatecall is used to in case any logic requires the adapters address as a msg.sender. (e.g. Synthetix staking)
+     */
+    function harvest() public takeFees {
+        if (
+            address(strategy) != address(0) &&
+            ((feesUpdatedAt + harvestCooldown) < block.timestamp)
+        ) {
+            // solhint-disable
+            address(strategy).delegatecall(
+                abi.encodeWithSignature("harvest()")
+            );
+        }
+
+        emit Harvested();
+    }
+
+    /**
+     * @notice Allows the strategy to deposit assets into the underlying protocol without minting new adapter shares.
+     * @dev This can be used e.g. for a compounding strategy to increase the value of each adapter share.
+     */
+    function strategyDeposit(uint256 amount, uint256 shares)
+        public
+        onlyStrategy
+    {
+        _protocolDeposit(amount, shares);
+    }
+
+    /**
+     * @notice Allows the strategy to withdraw assets from the underlying protocol without burning adapter shares.
+     * @dev This can be used e.g. for a leverage strategy to reduce leverage without the need for the strategy to hold any adapter shares.
+     */
+    function strategyWithdraw(uint256 amount, uint256 shares)
+        public
+        onlyStrategy
+    {
+        _protocolWithdraw(amount, shares);
+    }
+
+    /**
+     * @notice Verifies that the Adapter and Strategy are compatible and sets up the strategy.
+     * @dev This checks EIP165 compatibility and potentially other strategy specific checks (matching assets...).
+     * @dev It aftwards sets up anything required by the strategy to call `harvest()` like approvals etc.
+     */
+    function _verifyAndSetupStrategy(bytes4[8] memory requiredSigs) internal {
+        strategy.verifyAdapterSelectorCompatibility(requiredSigs);
+        strategy.verifyAdapterCompatibility(strategyConfig);
+        strategy.setUp(strategyConfig);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                      FEE LOGIC
+  //////////////////////////////////////////////////////////////*/
+
+    uint256 public managementFee = 5e16; // 0.5%
+    uint256 internal constant SECONDS_PER_YEAR = 365.25 days;
+
+    // TODO use deterministic fee recipient proxy
+    address FEE_RECIPIENT = address(0x4444);
+
+    uint256 public assetsCheckpoint;
+    uint256 public feesUpdatedAt;
+
+    event ManagementFeeChanged(uint256 oldFee, uint256 newFee);
+
+    error InvalidManagementFee(uint256 fee);
+
+    /**
+     * @notice Management fee that has accrued since last fee harvest.
+     * @return Accrued management fee in underlying `asset` token.
+     * @dev Management fee is annualized per minute, based on 525,600 minutes per year. Total assets are calculated using
+     *  the average of their current value and the value at the previous fee harvest checkpoint. This method is similar to
+     *  calculating a definite integral using the trapezoid rule.
+     */
+    function accruedManagementFee() public view returns (uint256) {
+        uint256 area = (totalAssets() + assetsCheckpoint) *
+            (block.timestamp - feesUpdatedAt);
+
+        return
+            (managementFee.mulDiv(area, 2, Math.Rounding.Down) /
+                SECONDS_PER_YEAR) / 1e18;
+    }
+
+    /**
+     * @notice Set a new managementFee for this adapter. Caller must be owner.
+     * @param newFee mangement fee in 1e18.
+     * @dev Fees can be 0 but never 1e17 (1e18 = 100%, 1e14 = 1 BPS)
+     */
+    function setManagementFee(uint256 newFee) public onlyOwner {
+        // Dont take more than 10% managementFee
+        if (newFee >= 1e17) revert InvalidManagementFee(newFee);
+
+        emit ManagementFeeChanged(managementFee, newFee);
+
+        managementFee = newFee;
+    }
+
+    /// @notice Collect management fees and update asset checkpoint.
+    modifier takeFees() {
+        _;
+
+        uint256 _managementFee = accruedManagementFee();
+
+        if (_managementFee > 0) {
+            feesUpdatedAt = block.timestamp;
+            _mint(FEE_RECIPIENT, convertToShares(_managementFee));
+        }
+
+        assetsCheckpoint = totalAssets();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                      PAUSING LOGIC
+  //////////////////////////////////////////////////////////////*/
+
+    /// @notice Pause Deposits and withdraw all funds from the underlying protocol. Caller must be owner.
+    function pause() external onlyOwner {
+        _protocolWithdraw(totalAssets(), totalSupply());
+        _pause();
+    }
+
+    /// @notice Unpause Deposits and deposit all funds into the underlying protocol. Caller must be owner.
+    function unpause() external onlyOwner {
+        _protocolDeposit(totalAssets(), totalSupply());
+        _unpause();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          INTERNAL HOOKS LOGIC
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice deposit into the underlying protocol.
+    function _protocolDeposit(uint256 assets, uint256 shares) internal virtual {
+        // OPTIONAL - convertIntoUnderlyingShares(assets,shares)
+    }
+
+    /// @notice Withdraw from the underlying protocol.
     function _protocolWithdraw(uint256 assets, uint256 shares)
         internal
         virtual
     {
         // OPTIONAL - convertIntoUnderlyingShares(assets,shares)
-        // withdraw from underlying protocol
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                      EIP-165 LOGIC
+  //////////////////////////////////////////////////////////////*/
+
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        virtual
+        override
+        returns (bool)
+    {
+        return interfaceId == type(IAdapter).interfaceId;
     }
 
     /*//////////////////////////////////////////////////////////////
                       EIP-2612 LOGIC
   //////////////////////////////////////////////////////////////*/
 
-    error PermitDeadlineExpired(uint256 deadline);
-    error InvalidSigner(address signer);
-
     //  EIP-2612 STORAGE
     uint256 internal INITIAL_CHAIN_ID;
     bytes32 internal INITIAL_DOMAIN_SEPARATOR;
     mapping(address => uint256) public nonces;
+
+    error PermitDeadlineExpired(uint256 deadline);
+    error InvalidSigner(address signer);
 
     function permit(
         address owner,
@@ -310,126 +490,5 @@ contract AdapterBase is
                     address(this)
                 )
             );
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                            STRATEGY LOGIC
-    //////////////////////////////////////////////////////////////*/
-
-    IStrategy public strategy;
-    bytes public strategyConfig;
-    uint256 public harvestCooldown;
-
-    event Harvested();
-
-    function harvest() public takeFees {
-        if (
-            address(strategy) != address(0) &&
-            ((feesUpdatedAt + harvestCooldown) < block.timestamp)
-        ) {
-            // solhint-disable
-            address(strategy).delegatecall(
-                abi.encodeWithSignature("harvest()")
-            );
-        }
-
-        emit Harvested();
-    }
-
-    function strategyDeposit(uint256 amount, uint256 shares)
-        public
-        onlyStrategy
-    {
-        _protocolDeposit(amount, shares);
-    }
-
-    function strategyWithdraw(uint256 amount, uint256 shares)
-        public
-        onlyStrategy
-    {
-        _protocolWithdraw(amount, shares);
-    }
-
-    function _verifyAndSetupStrategy(bytes4[8] memory requiredSigs) internal {
-        strategy.verifyAdapterSelectorCompatibility(requiredSigs);
-        strategy.verifyAdapterCompatibility(strategyConfig);
-        strategy.setUp(strategyConfig);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                      FEE LOGIC
-  //////////////////////////////////////////////////////////////*/
-
-    uint256 public managementFee = 5e16;
-    uint256 internal constant MAX_FEE = 1e18;
-    uint256 internal constant SECONDS_PER_YEAR = 365.25 days;
-
-    // TODO use deterministic fee recipient proxy
-    address FEE_RECIPIENT = address(0x4444);
-
-    uint256 public assetsCheckpoint;
-    uint256 public feesUpdatedAt;
-
-    error InvalidManagementFee(uint256 fee);
-
-    event ManagementFeeChanged(uint256 oldFee, uint256 newFee);
-
-    function accruedManagementFee() public view returns (uint256) {
-        uint256 area = (totalAssets() + assetsCheckpoint) *
-            (block.timestamp - feesUpdatedAt);
-
-        return
-            (managementFee.mulDiv(area, 2, Math.Rounding.Down) /
-                SECONDS_PER_YEAR) / MAX_FEE;
-    }
-
-    function setManagementFee(uint256 newFee) public onlyOwner {
-        // Dont take more than 10% managementFee
-        if (newFee >= 1e17) revert InvalidManagementFee(newFee);
-
-        emit ManagementFeeChanged(managementFee, newFee);
-
-        managementFee = newFee;
-    }
-
-    modifier takeFees() {
-        _;
-
-        uint256 _managementFee = accruedManagementFee();
-
-        if (_managementFee > 0) {
-            feesUpdatedAt = block.timestamp;
-            _mint(FEE_RECIPIENT, convertToShares(_managementFee));
-        }
-
-        assetsCheckpoint = totalAssets();
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                      PAUSING LOGIC
-  //////////////////////////////////////////////////////////////*/
-
-    function pause() external onlyOwner {
-        _protocolWithdraw(totalAssets(), totalSupply());
-        _pause();
-    }
-
-    function unpause() external onlyOwner {
-        _protocolDeposit(totalAssets(), totalSupply());
-        _unpause();
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                      EIP-165 LOGIC
-  //////////////////////////////////////////////////////////////*/
-
-    function supportsInterface(bytes4 interfaceId)
-        public
-        view
-        virtual
-        override
-        returns (bool)
-    {
-        return interfaceId == type(IAdapter).interfaceId;
     }
 }
