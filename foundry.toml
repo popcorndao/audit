@@ -21,6 +21,8 @@ remappings = [
 
 [rpc_endpoints]
 FORKING_RPC_URL = "${FORKING_RPC_URL}"
+ETH_RPC_URL = "${ETH_RPC_URL}"
+POLYGON_RPC_URL = "${POLYGON_RPC_URL}"
 
 [profile.ci]
 src = 'src'
