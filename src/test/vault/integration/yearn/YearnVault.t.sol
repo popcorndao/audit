@@ -13,7 +13,7 @@ contract YearnVaultTest is AbstractVaultIntegrationTest {
     address yearnRegistry = 0x50c1a2eA0a861A967D9d0FFE2AE4012c2E053804;
 
     function setUp() public {
-        uint256 forkId = vm.createSelectFork(vm.rpcUrl("ETH_RPC_URL"));
+        uint256 forkId = vm.createSelectFork(vm.rpcUrl("mainnet"));
         vm.selectFork(forkId);
 
         testConfigStorage = ITestConfigStorage(

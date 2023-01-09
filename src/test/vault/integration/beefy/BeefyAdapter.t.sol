@@ -16,7 +16,7 @@ contract BeefyAdapterTest is AbstractAdapterTest {
     IBeefyBalanceCheck beefyBalanceCheck;
 
     function setUp() public {
-        uint256 forkId = vm.createSelectFork(vm.rpcUrl("POLYGON_RPC_URL"));
+        uint256 forkId = vm.createSelectFork(vm.rpcUrl("polygon"));
         vm.selectFork(forkId);
 
         testConfigStorage = ITestConfigStorage(
