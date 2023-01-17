@@ -25,18 +25,6 @@ Additionally we included 2 utility contracts that can be used along side the vau
 src
 ├── interfaces
 ├── test
-│   ├── utils
-│   ├── vault
-│   │   ├── integration
-│   │   │   ├── beefy
-│   │   │   │   ├── BeefyAdapter.t.sol
-│   │   │   │   ├── BeefyVault.t.sol
-│   │   │   ├── yearn
-│   │   │   │   ├── YearnAdapter.t.sol
-│   │   │   │   ├── YearnVault.t.sol
-│   │   ├── Vault.t.sol
-│   ├── MultiRewardEscrow.t.sol
-│   ├── MultiRewardStaking.t.sol
 ├── utils
 │   ├── MultiRewardEscrow.sol
 │   ├── MultiRewardStaking.sol
@@ -51,7 +39,15 @@ src
 │   │   ├── yearn
 │   │   │   ├── YearnAdapter.sol
 │   ├── strategy
+│   ├── AdminProxy.sol
+│   ├── CloneFactory.sol
+│   ├── CloneRegistry.sol
+│   ├── DeploymentController.sol
+│   ├── EndorsementRegistry.sol
+│   ├── TemplateRegistry.sol
 │   ├── Vault.sol
+│   ├── VaultController.sol
+│   ├── VaultRegistry.sol
 ```
 
 In scope for this audit are the following contracts:
