@@ -51,3 +51,7 @@ interface IBeefyBooster {
 interface IBeefyBalanceCheck {
   function balanceOf(address _account) external view returns (uint256);
 }
+
+interface IBeefyStrat {
+  function withdrawalFee() external view returns (uint256);
+}
