@@ -24,7 +24,6 @@ Additionally we included 2 utility contracts that can be used along side the vau
 ```
 src
 ├── interfaces
-├── test
 ├── utils
 │   ├── MultiRewardEscrow.sol
 │   ├── MultiRewardStaking.sol
@@ -48,6 +47,7 @@ src
 │   ├── Vault.sol
 │   ├── VaultController.sol
 │   ├── VaultRegistry.sol
+test
 ```
 
 In scope for this audit are the following contracts:
