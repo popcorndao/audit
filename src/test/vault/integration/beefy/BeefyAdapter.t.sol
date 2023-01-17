@@ -1,225 +1,188 @@
 // SPDX-License-Identifier: GPL-3.0
 // Docgen-SOLC: 0.8.15
+
 pragma solidity ^0.8.15;
 
-import {Test} from "forge-std/Test.sol";
+import { Test } from "forge-std/Test.sol";
 
-import {BeefyAdapter, SafeERC20, IERC20, IERC20Metadata, Math, IBeefyVault, IBeefyBooster, IBeefyBalanceCheck} from "../../../../vault/adapter/beefy/BeefyAdapter.sol";
-import {BeefyTestConfigStorage, BeefyTestConfig} from "./BeefyTestConfigStorage.sol";
-import {AbstractAdapterTest, ITestConfigStorage, IAdapter} from "../abstract/AbstractAdapterTest.sol";
+import { BeefyAdapter, SafeERC20, IERC20, IERC20Metadata, Math, IBeefyVault, IBeefyBooster, IBeefyBalanceCheck } from "../../../../src/vault/adapter/beefy/BeefyAdapter.sol";
+import { BeefyTestConfigStorage, BeefyTestConfig } from "./BeefyTestConfigStorage.sol";
+import { AbstractAdapterTest, ITestConfigStorage, IAdapter } from "../abstract/AbstractAdapterTest.sol";
+import { IEndorsementRegistry } from "../../../../src/interfaces/vault/IEndorsementRegistry.sol";
+import { EndorsementRegistry } from "../../../../src/vault/EndorsementRegistry.sol";
 
 contract BeefyAdapterTest is AbstractAdapterTest {
-    using Math for uint256;
+  using Math for uint256;
 
-    IBeefyBooster beefyBooster;
-    IBeefyVault beefyVault;
-    IBeefyBalanceCheck beefyBalanceCheck;
+  IBeefyBooster beefyBooster;
+  IBeefyVault beefyVault;
+  IBeefyBalanceCheck beefyBalanceCheck;
+  IEndorsementRegistry endorsementRegistry;
 
-    function setUp() public {
-        uint256 forkId = vm.createSelectFork(vm.rpcUrl("polygon"));
-        vm.selectFork(forkId);
+  function setUp() public {
+    uint256 forkId = vm.createSelectFork(vm.rpcUrl("polygon"));
+    vm.selectFork(forkId);
 
-        testConfigStorage = ITestConfigStorage(
-            address(new BeefyTestConfigStorage())
-        );
+    testConfigStorage = ITestConfigStorage(address(new BeefyTestConfigStorage()));
 
-        _setUpTest(testConfigStorage.getTestConfig(0));
-    }
+    _setUpTest(testConfigStorage.getTestConfig(0));
+  }
 
-    function overrideSetup(bytes memory testConfig) public override {
-        _setUpTest(testConfig);
-    }
+  function overrideSetup(bytes memory testConfig) public override {
+    _setUpTest(testConfig);
+  }
 
-    function _setUpTest(bytes memory testConfig) internal {
-        createAdapter();
+  function _setUpTest(bytes memory testConfig) internal {
+    createAdapter();
 
-        (address _beefyVault, address _beefyBooster, ) = abi.decode(
-            testConfig,
-            (address, address, uint256)
-        );
-        beefyVault = IBeefyVault(_beefyVault);
-        beefyBooster = IBeefyBooster(_beefyBooster);
-        beefyBalanceCheck = IBeefyBalanceCheck(
-            _beefyBooster == address(0) ? _beefyVault : _beefyBooster
-        );
+    (address _beefyVault, address _beefyBooster) = abi.decode(testConfig, (address, address));
+    beefyVault = IBeefyVault(_beefyVault);
+    beefyBooster = IBeefyBooster(_beefyBooster);
+    beefyBalanceCheck = IBeefyBalanceCheck(_beefyBooster == address(0) ? _beefyVault : _beefyBooster);
 
-        setUpBaseTest(
-            IERC20(IBeefyVault(beefyVault).want()),
-            adapter,
-            address(0),
-            10,
-            "Beefy ",
-            true
-        );
+    // Endorse Beefy Vault
+    endorsementRegistry = IEndorsementRegistry(address(new EndorsementRegistry(address(this))));
+    address[] memory targets = new address[](1);
+    targets[0] = _beefyVault;
+    endorsementRegistry.toggleEndorsements(targets);
 
-        vm.label(_beefyVault, "beefyVault");
-        vm.label(_beefyBooster, "beefyBooster");
-        vm.label(address(asset), "asset");
-        vm.label(address(this), "test");
+    setUpBaseTest(IERC20(IBeefyVault(beefyVault).want()), adapter, address(endorsementRegistry), 10, "Beefy ", true);
 
-        adapter.initialize(
-            abi.encode(asset, address(this), strategy, 0, sigs, ""),
-            externalRegistry,
-            testConfig
-        );
-    }
+    vm.label(_beefyVault, "beefyVault");
+    vm.label(_beefyBooster, "beefyBooster");
+    vm.label(address(asset), "asset");
+    vm.label(address(this), "test");
 
-    /*//////////////////////////////////////////////////////////////
+    adapter.initialize(abi.encode(asset, address(this), strategy, 0, sigs, ""), externalRegistry, testConfig);
+  }
+
+  /*//////////////////////////////////////////////////////////////
                           HELPER
     //////////////////////////////////////////////////////////////*/
 
-    function createAdapter() public override {
-        adapter = IAdapter(address(new BeefyAdapter()));
-    }
+  function createAdapter() public override {
+    adapter = IAdapter(address(new BeefyAdapter()));
+  }
 
-    function increasePricePerShare(uint256 amount) public override {
-        deal(
-            address(asset),
-            address(beefyVault),
-            asset.balanceOf(address(beefyVault)) + amount
-        );
-        beefyVault.earn();
-    }
+  function increasePricePerShare(uint256 amount) public override {
+    deal(address(asset), address(beefyVault), asset.balanceOf(address(beefyVault)) + amount);
+    beefyVault.earn();
+  }
 
-    function iouBalance() public view override returns (uint256) {
-        return beefyBalanceCheck.balanceOf(address(adapter));
-    }
+  function iouBalance() public view override returns (uint256) {
+    return beefyBalanceCheck.balanceOf(address(adapter));
+  }
 
-    // Verify that totalAssets returns the expected amount
-    function verify_totalAssets() public override {
-        // Make sure totalAssets isnt 0
-        deal(address(asset), bob, defaultAmount);
-        vm.startPrank(bob);
-        asset.approve(address(adapter), defaultAmount);
-        adapter.deposit(defaultAmount, bob);
-        vm.stopPrank();
+  // Verify that totalAssets returns the expected amount
+  function verify_totalAssets() public override {
+    // Make sure totalAssets isnt 0
+    deal(address(asset), bob, defaultAmount);
+    vm.startPrank(bob);
+    asset.approve(address(adapter), defaultAmount);
+    adapter.deposit(defaultAmount, bob);
+    vm.stopPrank();
 
-        assertEq(
-            adapter.totalAssets(),
-            adapter.convertToAssets(adapter.totalSupply()),
-            string.concat("totalSupply converted != totalAssets", baseTestId)
-        );
-        assertEq(
-            adapter.totalAssets(),
-            iouBalance().mulDiv(
-                beefyVault.balance(),
-                beefyVault.totalSupply(),
-                Math.Rounding.Down
-            ),
-            string.concat("totalAssets != beefy assets", baseTestId)
-        );
-    }
+    assertEq(
+      adapter.totalAssets(),
+      adapter.convertToAssets(adapter.totalSupply()),
+      string.concat("totalSupply converted != totalAssets", baseTestId)
+    );
+    assertEq(
+      adapter.totalAssets(),
+      iouBalance().mulDiv(beefyVault.balance(), beefyVault.totalSupply(), Math.Rounding.Down),
+      string.concat("totalAssets != beefy assets", baseTestId)
+    );
+  }
 
-    /*//////////////////////////////////////////////////////////////
+  /*//////////////////////////////////////////////////////////////
                           INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    function verify_adapterInit() public override {
-        assertEq(adapter.asset(), beefyVault.want(), "asset");
-        assertEq(
-            IERC20Metadata(address(adapter)).name(),
-            string.concat(
-                "Popcorn Beefy",
-                IERC20Metadata(address(asset)).name(),
-                " Adapter"
-            ),
-            "name"
-        );
-        assertEq(
-            IERC20Metadata(address(adapter)).symbol(),
-            string.concat("popB-", IERC20Metadata(address(asset)).symbol()),
-            "symbol"
-        );
+  function verify_adapterInit() public override {
+    assertEq(adapter.asset(), beefyVault.want(), "asset");
+    assertEq(
+      IERC20Metadata(address(adapter)).name(),
+      string.concat("Popcorn Beefy", IERC20Metadata(address(asset)).name(), " Adapter"),
+      "name"
+    );
+    assertEq(
+      IERC20Metadata(address(adapter)).symbol(),
+      string.concat("popB-", IERC20Metadata(address(asset)).symbol()),
+      "symbol"
+    );
 
-        assertEq(
-            asset.allowance(address(adapter), address(beefyVault)),
-            type(uint256).max,
-            "allowance"
-        );
+    assertEq(asset.allowance(address(adapter), address(beefyVault)), type(uint256).max, "allowance");
 
-        // Test Beefy Config Boundaries
-        createAdapter();
-        (
-            address _beefyVault,
-            address _beefyBooster,
-            uint256 _beefyWithdrawalFee
-        ) = abi.decode(
-                testConfigStorage.getTestConfig(0),
-                (address, address, uint256)
-            );
+    // Test Beefy Config Boundaries
+    createAdapter();
+    (address _beefyVault, address _beefyBooster) = abi.decode(testConfigStorage.getTestConfig(0), (address, address));
+    address[] memory targets = new address[](2);
+    targets[0] = _beefyVault;
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                BeefyAdapter.InvalidBeefyWithdrawalFee.selector,
-                51
-            )
-        );
-        adapter.initialize(
-            abi.encode(asset, address(this), strategy, 0, sigs, ""),
-            address(0),
-            abi.encode(_beefyVault, _beefyBooster, uint256(51))
-        );
+    endorsementRegistry.toggleEndorsements(targets);
 
-        // Using Retired USD+-MATIC vLP vault on polygon
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                BeefyAdapter.InvalidBeefyVault.selector,
-                address(0x3af3563Ba5C68EB7DCbAdd2dF0FcE4CC9818e75c)
-            )
-        );
-        adapter.initialize(
-            abi.encode(asset, address(this), strategy, 0, sigs, ""),
-            address(0),
-            abi.encode(
-                address(0x3af3563Ba5C68EB7DCbAdd2dF0FcE4CC9818e75c),
-                _beefyBooster,
-                _beefyWithdrawalFee
-            )
-        );
+    vm.expectRevert(abi.encodeWithSelector(BeefyAdapter.NotEndorsed.selector, _beefyVault));
+    adapter.initialize(
+      abi.encode(asset, address(this), strategy, 0, sigs, ""),
+      address(endorsementRegistry),
+      abi.encode(_beefyVault, _beefyBooster)
+    );
 
-        // Using stMATIC-MATIC vault Booster on polygon
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                BeefyAdapter.InvalidBeefyBooster.selector,
-                address(0xBb77dDe3101B8f9B71755ABe2F69b64e79AE4A41)
-            )
-        );
-        adapter.initialize(
-            abi.encode(asset, address(this), strategy, 0, sigs, ""),
-            address(0),
-            abi.encode(
-                _beefyVault,
-                address(0xBb77dDe3101B8f9B71755ABe2F69b64e79AE4A41),
-                _beefyWithdrawalFee
-            )
-        );
-    }
+    targets[1] = address(0x3af3563Ba5C68EB7DCbAdd2dF0FcE4CC9818e75c);
+    endorsementRegistry.toggleEndorsements(targets);
 
-    /*//////////////////////////////////////////////////////////////
+    // Using Retired USD+-MATIC vLP vault on polygon
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        BeefyAdapter.InvalidBeefyVault.selector,
+        address(0x3af3563Ba5C68EB7DCbAdd2dF0FcE4CC9818e75c)
+      )
+    );
+    adapter.initialize(
+      abi.encode(asset, address(this), strategy, 0, sigs, ""),
+      address(endorsementRegistry),
+      abi.encode(address(0x3af3563Ba5C68EB7DCbAdd2dF0FcE4CC9818e75c), _beefyBooster)
+    );
+
+    // Using stMATIC-MATIC vault Booster on polygon
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        BeefyAdapter.InvalidBeefyBooster.selector,
+        address(0xBb77dDe3101B8f9B71755ABe2F69b64e79AE4A41)
+      )
+    );
+    adapter.initialize(
+      abi.encode(asset, address(this), strategy, 0, sigs, ""),
+      address(endorsementRegistry),
+      abi.encode(_beefyVault, address(0xBb77dDe3101B8f9B71755ABe2F69b64e79AE4A41))
+    );
+  }
+
+  /*//////////////////////////////////////////////////////////////
                           ROUNDTRIP TESTS
     //////////////////////////////////////////////////////////////*/
 
-    // NOTE - The beefy adapter suffers often from an off-by-one error which "steals" 1 wei from the user
-    function test__RT_deposit_withdraw() public override {
-        _mintFor(defaultAmount, bob);
+  // NOTE - The beefy adapter suffers often from an off-by-one error which "steals" 1 wei from the user
+  function test__RT_deposit_withdraw() public override {
+    _mintFor(defaultAmount, bob);
 
-        vm.startPrank(bob);
-        uint256 shares1 = adapter.deposit(defaultAmount, bob);
-        uint256 shares2 = adapter.withdraw(defaultAmount - 1, bob, bob);
-        vm.stopPrank();
+    vm.startPrank(bob);
+    uint256 shares1 = adapter.deposit(defaultAmount, bob);
+    uint256 shares2 = adapter.withdraw(defaultAmount - 1, bob, bob);
+    vm.stopPrank();
 
-        assertApproxGeAbs(shares2, shares1, _delta_, testId);
-    }
+    assertApproxGeAbs(shares2, shares1, _delta_, testId);
+  }
 
-    // NOTE - The beefy adapter suffers often from an off-by-one error which "steals" 1 wei from the user
-    function test__RT_mint_withdraw() public override {
-        _mintFor(adapter.previewMint(defaultAmount), bob);
+  // NOTE - The beefy adapter suffers often from an off-by-one error which "steals" 1 wei from the user
+  function test__RT_mint_withdraw() public override {
+    _mintFor(adapter.previewMint(defaultAmount), bob);
 
-        vm.startPrank(bob);
-        uint256 assets = adapter.mint(defaultAmount, bob);
-        uint256 shares = adapter.withdraw(assets - 1, bob, bob);
-        vm.stopPrank();
+    vm.startPrank(bob);
+    uint256 assets = adapter.mint(defaultAmount, bob);
+    uint256 shares = adapter.withdraw(assets - 1, bob, bob);
+    vm.stopPrank();
 
-        assertApproxGeAbs(shares, defaultAmount, _delta_, testId);
-    }
+    assertApproxGeAbs(shares, defaultAmount, _delta_, testId);
+  }
 }
