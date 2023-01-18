@@ -76,7 +76,7 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
     INITIAL_CHAIN_ID = block.chainid;
     INITIAL_DOMAIN_SEPARATOR = computeDomainSeparator();
 
-    ONE = 10 ** decimals();
+    ONE = 10**decimals();
     vaultShareHWM = ONE;
 
     feesUpdatedAt = block.timestamp;
@@ -121,10 +121,13 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
    * @param receiver Receiver of issued vault shares.
    * @return shares Quantity of vault shares issued to `receiver`.
    */
-  function deposit(
-    uint256 assets,
-    address receiver
-  ) public nonReentrant whenNotPaused syncFeeCheckpoint returns (uint256 shares) {
+  function deposit(uint256 assets, address receiver)
+    public
+    nonReentrant
+    whenNotPaused
+    syncFeeCheckpoint
+    returns (uint256 shares)
+  {
     if (receiver == address(0)) revert InvalidReceiver();
 
     uint256 feeShares = convertToShares(assets.mulDiv(fees.deposit, 1e18, Math.Rounding.Down));
@@ -152,10 +155,13 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
    * @param receiver Receiver of issued vault shares.
    * @return assets Quantity of assets deposited by caller.
    */
-  function mint(
-    uint256 shares,
-    address receiver
-  ) public nonReentrant whenNotPaused syncFeeCheckpoint returns (uint256 assets) {
+  function mint(uint256 shares, address receiver)
+    public
+    nonReentrant
+    whenNotPaused
+    syncFeeCheckpoint
+    returns (uint256 assets)
+  {
     if (receiver == address(0)) revert InvalidReceiver();
 
     uint256 depositFee = fees.deposit;
@@ -223,7 +229,11 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
    * @param owner Owner of burned vault shares.
    * @return assets Quantity of `asset` sent to `receiver`.
    */
-  function redeem(uint256 shares, address receiver, address owner) public nonReentrant returns (uint256 assets) {
+  function redeem(
+    uint256 shares,
+    address receiver,
+    address owner
+  ) public nonReentrant returns (uint256 assets) {
     if (receiver == address(0)) revert InvalidReceiver();
 
     if (msg.sender != owner) _approve(owner, msg.sender, allowance(owner, msg.sender) - shares);
