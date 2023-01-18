@@ -42,6 +42,27 @@ Additionally we included 2 utility contracts that are used alongside the vault s
 ```
 src
 ├── interfaces
+│   ├── external
+│   ├── vault
+│   ├── ├── IAdapter.sol
+│   ├── ├── IAdminProxy.sol
+│   ├── ├── ICloneFactory.sol
+│   ├── ├── ICloneRegistry.sol
+│   ├── ├── IDeploymentController.sol
+│   ├── ├── IEndorsementRegistry.sol
+│   ├── ├── IERC4626.sol
+│   ├── ├── IStrategy.sol
+│   ├── ├── ITemplateRegistry.sol
+│   ├── ├── IVault.sol
+│   ├── ├── IVaultController.sol
+│   ├── ├── IVaultRegistry.sol
+│   ├── ├── IWithRewards.sol
+│   ├── IEIP165.sol
+│   ├── IMultiRewardEscrow.sol
+│   ├── IMultiRewardStaking.sol
+│   ├── IOwned.sol
+│   ├── IPausable.sol
+│   ├── IPermit.sol
 ├── utils
 │   ├── MultiRewardEscrow.sol
 │   ├── MultiRewardStaking.sol
@@ -86,6 +107,27 @@ In scope for this audit are the following contracts:
 - MultiRewardEscrow.sol
 - MultiRewardStaking.sol
 
+And the following interfaces:
+- IAdapter.sol
+- IAdminProxy.sol
+- ICloneFactory.sol
+- ICloneRegistry.sol
+- IDeploymentController.sol
+- IEndorsementRegistry.sol
+- IERC4626.sol
+- IStrategy.sol
+- ITemplateRegistry.sol
+- IVault.sol
+- IVaultController.sol
+- IVaultRegistry.sol
+- IWithRewards.sol
+- IEIP165.sol
+- IMultiRewardEscrow.sol
+- IMultiRewardStaking.sol
+- IOwned
+- IPausable
+- IPermit
+  
 Some of these contracts depend on older utility contracts which is why this repo contains more than just these contracts. These dependencies have been audited previously.
 Additionally there are some wip sample strategies which might help to illustrate how strategies can be used in conjuction with adapters.
 
