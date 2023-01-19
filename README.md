@@ -22,23 +22,30 @@ The Vault Factory part consists of a mix of Registry and Execution contracts. Al
 **Note:** This system ensures that minimal user input is needed and executions are handled with valid inputs and in the correct order. The goal is to minimize human error and the attack surface. A lot of configurations for **Adapters** and **Strategies** is very protocol specific. These are therefore mainly handled in the implementations itself. There is still a need for some kind of governance to ensure that only correct and safe **Templates** are added and dangerous assets get rejected. 
 
 ![vaultInfraFlow](./vaultInfraFlow.PNG)
+
 <br/>
 <br/>
+
 ## Vault, Adapter & Strategy
 -   **Vault:** A simple ERC-4626 implementation which allows the creator to add various types of fees and interact with other protocols via any ERC-4626 compliant **Adapter**. Fees and **Adapter** can be changed by the creator after a ragequit period.
 -   **Adapter:** An immutable wrapper for existing contract to allow for ERC-4626 compatability. Optionally adapters can utilize a **Strategy** to perform various additional tasks besides simply depositing and withdrawing token from the wrapped protocol. PopcornDAO will collect management fees via these **Adapter**.
 -   **Strategy:** An arbitrary module to perform various tasks from compouding, leverage or simply forwarding rewards. Strategies can be attached to an **Adapter** to give it additionaly utility.
 
 ![vaultFlow](./vaultFlow.PNG)
+
 <br/>
 <br/>
+
 ## Utility Contracts
 Additionally we included 2 utility contracts that are used alongside the vault system.
 -   **MultiRewardStaking:** A simple ERC-4626 implementation of a staking contract. A user can provide an asset and receive rewards in multiple tokens. Adding these rewards is done by the contract owner. They can be either paid out over time or instantly. Rewards can optionally also be vested on claim.
 -   **MultiRewardEscrow:** Allows anyone to lock up and vest arbitrary tokens over a given time. Will be used mainly in conjuction with **MultiRewardStaking**.
+
 <br/>
 <br/>
+
 ## Repository Overview
+
 ```
 src
 ├── interfaces
@@ -141,9 +148,12 @@ Additionally there are some wip sample strategies which might help to illustrate
 -   [Node.js](https://nodejs.org/en/) v16.16.0 (you may wish to use [nvm][1])
 -   [yarn](https://yarnpkg.com/)
 -   [foundry](https://github.com/foundry-rs/foundry)
+
 <br/>
 <br/>
+
 ## Installing Dependencies
+
 ```
 foundryup
 
@@ -151,8 +161,10 @@ forge install
 
 yarn install
 ```
+
 <br/>
 <br/>
+
 ## Testing
 
 ```
