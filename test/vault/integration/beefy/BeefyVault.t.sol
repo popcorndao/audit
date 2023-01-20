@@ -7,8 +7,8 @@ import { AbstractVaultIntegrationTest } from "../abstract/AbstractVaultIntegrati
 import { BeefyAdapter, SafeERC20, IERC20, IERC20Metadata, Math, IBeefyVault, IBeefyBooster, IAdapter, IStrategy } from "../../../../src/vault/adapter/beefy/BeefyAdapter.sol";
 import { BeefyTestConfigStorage, BeefyTestConfig, ITestConfigStorage } from "./BeefyTestConfigStorage.sol";
 import { MockStrategy } from "../../../utils/mocks/MockStrategy.sol";
-import { IEndorsementRegistry } from "../../../../src/interfaces/vault/IEndorsementRegistry.sol";
-import { EndorsementRegistry } from "../../../../src/vault/EndorsementRegistry.sol";
+import { IPermissionRegistry, Permission } from "../../../../src/interfaces/vault/IPermissionRegistry.sol";
+import { PermissionRegistry } from "../../../../src/vault/PermissionRegistry.sol";
 
 contract BeefyVaultTest is AbstractVaultIntegrationTest {
   using Math for uint256;
@@ -16,7 +16,7 @@ contract BeefyVaultTest is AbstractVaultIntegrationTest {
   IBeefyBooster beefyBooster;
   IBeefyVault beefyVault;
   IStrategy strategy;
-  IEndorsementRegistry endorsementRegistry;
+  IPermissionRegistry permissionRegistry;
 
   function setUp() public {
     uint256 forkId = vm.createSelectFork(vm.rpcUrl("polygon"));
@@ -41,14 +41,16 @@ contract BeefyVaultTest is AbstractVaultIntegrationTest {
     strategy = IStrategy(address(new MockStrategy()));
 
     // Endorse Beefy Vault
-    endorsementRegistry = IEndorsementRegistry(address(new EndorsementRegistry(address(this))));
+    permissionRegistry = IPermissionRegistry(address(new PermissionRegistry(address(this))));
+    Permission[] memory newPermissions = new Permission[](1);
+    newPermissions[0] = Permission(true, false);
     address[] memory targets = new address[](1);
     targets[0] = _beefyVault;
-    endorsementRegistry.toggleEndorsements(targets);
+    permissionRegistry.setPermissions(targets, newPermissions);
 
     adapter.initialize(
       abi.encode(IERC20(_asset), address(this), strategy, 0, sigs, ""),
-      address(endorsementRegistry),
+      address(permissionRegistry),
       testConfig
     );
 

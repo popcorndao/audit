@@ -27,17 +27,13 @@ interface ITemplateRegistry is IOwned {
 
   function templateExists(bytes32 templateId) external view returns (bool);
 
-  function getTemplateCategorys() external view returns (bytes32[] memory);
+  function getTemplateCategories() external view returns (bytes32[] memory);
 
   function getTemplate(bytes32 templateCategory, bytes32 templateId) external view returns (Template memory);
 
   function getTemplateIds(bytes32 templateCategory) external view returns (bytes32[] memory);
 
-  function addTemplate(
-    bytes32 templateType,
-    bytes32 templateId,
-    Template memory template
-  ) external;
+  function addTemplate(bytes32 templateType, bytes32 templateId, Template memory template) external;
 
   function addTemplateCategory(bytes32 templateCategory) external;
 

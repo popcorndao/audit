@@ -14,12 +14,13 @@ The Vault Factory part consists of a mix of Registry and Execution contracts. Al
 -   **CloneRegistry:** A minimal registry which saves the address of each newly created clone.
 -   **TemplateRegistry:** A registry for **Templates**. Each Template contains an implementation and some metadata to ensure proper initialization of the clone. **Templates** need to be endorsed before they can be used to create new clones. Anyone can add a new **Template** but only the contract owner can endorse them if they are deemed correct and safe.
 -   **DeploymentController:** This contract bundles **CloneFactory**, **CloneRegistry** and **TemplateRegistry** to simplify the creation of new clones and ensure their safety.
--   **EndorsementRegistry:** A simple registry to endorse or reject certain addresses from beeing used. Currently this is only used to reject potentially unsafe assets and in the creation of beefy adapters.
+-   **PermissionRegistry:** A simple registry to endorse or reject certain addresses from beeing used. Currently this is only used to reject potentially unsafe assets and in the creation of beefy adapters.
 -   **VaulRegistry:** This registry safes new **Vaults** with additional metadata. The metadata can be used by any frontend and supply it with additional informations about the vault.
 -   **VaultController:** This contract bundles all previously mentioned contracts. It adds additional ux and safety measures to the creation of **Vaults**, **Adapters** and **Staking** contracts. Any management function in the protocol must be executed via the **VaultController**.
 -   **AdminProxy:** This contract owns any clone and most infrastructure contracts. Its used to make ownership transfers easy in case the **VaultController** should get updated. This contracts forwards almost all calls from the **VaultController**.
 
 **Note:** This system ensures that minimal user input is needed and executions are handled with valid inputs and in the correct order. The goal is to minimize human error and the attack surface. A lot of configurations for **Adapters** and **Strategies** is very protocol specific. These are therefore mainly handled in the implementations itself. There is still a need for some kind of governance to ensure that only correct and safe **Templates** are added and dangerous assets get rejected. 
+<br/>
 
 ![vaultInfraFlow](./vaultInfraFlow.PNG)
 
@@ -56,7 +57,7 @@ src
 │   ├── ├── ICloneFactory.sol
 │   ├── ├── ICloneRegistry.sol
 │   ├── ├── IDeploymentController.sol
-│   ├── ├── IEndorsementRegistry.sol
+│   ├── ├── IPermissionRegistry.sol
 │   ├── ├── IERC4626.sol
 │   ├── ├── IStrategy.sol
 │   ├── ├── ITemplateRegistry.sol
@@ -88,7 +89,7 @@ src
 │   ├── CloneFactory.sol
 │   ├── CloneRegistry.sol
 │   ├── DeploymentController.sol
-│   ├── EndorsementRegistry.sol
+│   ├── PermissionRegistry.sol
 │   ├── TemplateRegistry.sol
 │   ├── Vault.sol
 │   ├── VaultController.sol
@@ -101,7 +102,7 @@ In scope for this audit are the following contracts:
 - CloneFactory.sol
 - CloneRegistry.sol
 - DeploymentController.sol
-- EndorsementRegistry.sol
+- PermissionRegistry.sol
 - TemplateRegistry.sol
 - VaultController.sol
 - VaultRegistry.sol
@@ -120,7 +121,7 @@ And the following interfaces:
 - ICloneFactory.sol
 - ICloneRegistry.sol
 - IDeploymentController.sol
-- IEndorsementRegistry.sol
+- IPermissionRegistry.sol
 - IERC4626.sol
 - IStrategy.sol
 - ITemplateRegistry.sol
@@ -141,6 +142,29 @@ Additionally there are some wip sample strategies which might help to illustrate
 **Note:** The `AdapterBase.sol` still has a TODO to use a deterministic address for `feeRecipient`. As we didnt deploy this proxy yet on our target chains it remains a placeholder value for the moment. Once the proxy exists we will simply switch out the palceholder address.
 <br/>
 <br/>
+
+# Security
+
+## Threat model
+### Dangerous
+- Attack infrastructure to insert malicious assets / adapters / strategies
+- - Set malicious deploymentController
+- - Get malicious template endorsed
+- - Get malicious asset endorsed
+- Initial Deposit exploit
+- Change Fees and Fee recipient
+- Exchange adapter for malicious adapter
+- Register vaults in registry before creation to either grieve or set a malicious staking address
+- Nominate new owner of admin proxy
+- Predeploy deterministic proxies on other chains
+- TotalAsset() manipulation to withdraw additional assets or earn more shares
+## Grieving
+- Call array based functions with arrays that are too large
+- Set harvestCooldown too low and waste tokens and gas harvesting?
+- Spam template names?
+- Reject legit vaults / assets
+- Pause Vaults / adapters of other people
+
 # Developer Notes
 
 ## Prerequisites

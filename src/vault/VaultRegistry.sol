@@ -41,7 +41,7 @@ contract VaultRegistry is Owned {
    * @notice Registers a new vault with Metadata which can be used by a frontend. Caller must be owner. (`VaultController`)
    * @param _metadata VaultMetadata (See IVaultRegistry for more details)
    */
-  function registerVault(VaultMetadata memory _metadata) external onlyOwner {
+  function registerVault(VaultMetadata calldata _metadata) external onlyOwner {
     if (metadata[_metadata.vault].vault != address(0)) revert VaultAlreadyRegistered();
 
     metadata[_metadata.vault] = _metadata;

@@ -5,7 +5,7 @@ pragma solidity ^0.8.15;
 
 import { ICloneFactory } from "./ICloneFactory.sol";
 import { ICloneRegistry } from "./ICloneRegistry.sol";
-import { IEndorsementRegistry } from "./IEndorsementRegistry.sol";
+import { IPermissionRegistry } from "./IPermissionRegistry.sol";
 import { ITemplateRegistry, Template } from "./ITemplateRegistry.sol";
 
 interface IDeploymentController is ICloneFactory, ICloneRegistry {
@@ -13,11 +13,7 @@ interface IDeploymentController is ICloneFactory, ICloneRegistry {
 
   function templateExists(bytes32 templateId) external view returns (bool);
 
-  function addTemplate(
-    bytes32 templateCategory,
-    bytes32 templateId,
-    Template memory template
-  ) external;
+  function addTemplate(bytes32 templateCategory, bytes32 templateId, Template memory template) external;
 
   function addTemplateCategory(bytes32 templateCategory) external;
 
@@ -35,7 +31,7 @@ interface IDeploymentController is ICloneFactory, ICloneRegistry {
 
   function templateRegistry() external view returns (ITemplateRegistry);
 
-  function endorsementRegistry() external view returns (IEndorsementRegistry);
+  function PermissionRegistry() external view returns (IPermissionRegistry);
 
   function addClone(address clone) external;
 }

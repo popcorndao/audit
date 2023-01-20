@@ -6,10 +6,10 @@ import { IERC4626, IERC20 } from "./IERC4626.sol";
 
 // Fees are set in 1e18 for 100% (1 BPS = 1e14)
 struct VaultFees {
-  uint256 deposit;
-  uint256 withdrawal;
-  uint256 management;
-  uint256 performance;
+  uint64 deposit;
+  uint64 withdrawal;
+  uint64 management;
+  uint64 performance;
 }
 
 /// @notice Init data for a Vault

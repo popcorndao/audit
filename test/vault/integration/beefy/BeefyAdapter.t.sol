@@ -8,8 +8,8 @@ import { Test } from "forge-std/Test.sol";
 import { BeefyAdapter, SafeERC20, IERC20, IERC20Metadata, Math, IBeefyVault, IBeefyBooster, IBeefyBalanceCheck } from "../../../../src/vault/adapter/beefy/BeefyAdapter.sol";
 import { BeefyTestConfigStorage, BeefyTestConfig } from "./BeefyTestConfigStorage.sol";
 import { AbstractAdapterTest, ITestConfigStorage, IAdapter } from "../abstract/AbstractAdapterTest.sol";
-import { IEndorsementRegistry } from "../../../../src/interfaces/vault/IEndorsementRegistry.sol";
-import { EndorsementRegistry } from "../../../../src/vault/EndorsementRegistry.sol";
+import { IPermissionRegistry, Permission } from "../../../../src/interfaces/vault/IPermissionRegistry.sol";
+import { PermissionRegistry } from "../../../../src/vault/PermissionRegistry.sol";
 
 contract BeefyAdapterTest is AbstractAdapterTest {
   using Math for uint256;
@@ -17,7 +17,7 @@ contract BeefyAdapterTest is AbstractAdapterTest {
   IBeefyBooster beefyBooster;
   IBeefyVault beefyVault;
   IBeefyBalanceCheck beefyBalanceCheck;
-  IEndorsementRegistry endorsementRegistry;
+  IPermissionRegistry permissionRegistry;
 
   function setUp() public {
     uint256 forkId = vm.createSelectFork(vm.rpcUrl("polygon"));
@@ -41,12 +41,10 @@ contract BeefyAdapterTest is AbstractAdapterTest {
     beefyBalanceCheck = IBeefyBalanceCheck(_beefyBooster == address(0) ? _beefyVault : _beefyBooster);
 
     // Endorse Beefy Vault
-    endorsementRegistry = IEndorsementRegistry(address(new EndorsementRegistry(address(this))));
-    address[] memory targets = new address[](1);
-    targets[0] = _beefyVault;
-    endorsementRegistry.toggleEndorsements(targets);
+    permissionRegistry = IPermissionRegistry(address(new PermissionRegistry(address(this))));
+    setPermission(_beefyVault, true, false);
 
-    setUpBaseTest(IERC20(IBeefyVault(beefyVault).want()), adapter, address(endorsementRegistry), 10, "Beefy ", true);
+    setUpBaseTest(IERC20(IBeefyVault(beefyVault).want()), adapter, address(permissionRegistry), 10, "Beefy ", true);
 
     vm.label(_beefyVault, "beefyVault");
     vm.label(_beefyBooster, "beefyBooster");
@@ -94,6 +92,14 @@ contract BeefyAdapterTest is AbstractAdapterTest {
     );
   }
 
+  function setPermission(address target, bool endorsed, bool rejected) public {
+    address[] memory targets = new address[](1);
+    Permission[] memory permissions = new Permission[](1);
+    targets[0] = target;
+    permissions[0] = Permission(endorsed, rejected);
+    permissionRegistry.setPermissions(targets, permissions);
+  }
+
   /*//////////////////////////////////////////////////////////////
                           INITIALIZATION
     //////////////////////////////////////////////////////////////*/
@@ -116,20 +122,17 @@ contract BeefyAdapterTest is AbstractAdapterTest {
     // Test Beefy Config Boundaries
     createAdapter();
     (address _beefyVault, address _beefyBooster) = abi.decode(testConfigStorage.getTestConfig(0), (address, address));
-    address[] memory targets = new address[](2);
-    targets[0] = _beefyVault;
-
-    endorsementRegistry.toggleEndorsements(targets);
+    setPermission(_beefyVault, false, false);
 
     vm.expectRevert(abi.encodeWithSelector(BeefyAdapter.NotEndorsed.selector, _beefyVault));
     adapter.initialize(
       abi.encode(asset, address(this), strategy, 0, sigs, ""),
-      address(endorsementRegistry),
+      address(permissionRegistry),
       abi.encode(_beefyVault, _beefyBooster)
     );
 
-    targets[1] = address(0x3af3563Ba5C68EB7DCbAdd2dF0FcE4CC9818e75c);
-    endorsementRegistry.toggleEndorsements(targets);
+    setPermission(_beefyVault, true, false);
+    setPermission(address(0x3af3563Ba5C68EB7DCbAdd2dF0FcE4CC9818e75c), true, false);
 
     // Using Retired USD+-MATIC vLP vault on polygon
     vm.expectRevert(
@@ -140,7 +143,7 @@ contract BeefyAdapterTest is AbstractAdapterTest {
     );
     adapter.initialize(
       abi.encode(asset, address(this), strategy, 0, sigs, ""),
-      address(endorsementRegistry),
+      address(permissionRegistry),
       abi.encode(address(0x3af3563Ba5C68EB7DCbAdd2dF0FcE4CC9818e75c), _beefyBooster)
     );
 
@@ -153,7 +156,7 @@ contract BeefyAdapterTest is AbstractAdapterTest {
     );
     adapter.initialize(
       abi.encode(asset, address(this), strategy, 0, sigs, ""),
-      address(endorsementRegistry),
+      address(permissionRegistry),
       abi.encode(_beefyVault, address(0xBb77dDe3101B8f9B71755ABe2F69b64e79AE4A41))
     );
   }

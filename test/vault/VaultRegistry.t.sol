@@ -18,7 +18,7 @@ contract VaultRegistryTest is Test {
   address nonOwner = makeAddr("non owner");
 
   address staking = makeAddr("staking");
-  address submitter = makeAddr("submitter");
+  address creator = makeAddr("creator");
   address swapAddress = makeAddr("swap address");
 
   string constant metadataCid = "QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR";
@@ -41,7 +41,7 @@ contract VaultRegistryTest is Test {
     VaultMetadata memory VaultInitParams = VaultMetadata({
       vault: address(vault),
       staking: staking,
-      submitter: submitter,
+      creator: creator,
       metadataCID: metadataCid,
       swapTokenAddresses: swapTokenAddresses,
       swapAddress: swapAddress,
@@ -57,7 +57,7 @@ contract VaultRegistryTest is Test {
 
     assertEq(savedVault.vault, address(vault));
     assertEq(savedVault.staking, staking);
-    assertEq(savedVault.submitter, submitter);
+    assertEq(savedVault.creator, creator);
     assertEq(savedVault.metadataCID, metadataCid);
     assertEq(savedVault.swapAddress, swapAddress);
     assertEq(savedVault.exchange, 1);
@@ -71,7 +71,7 @@ contract VaultRegistryTest is Test {
     VaultMetadata memory VaultInitParams = VaultMetadata({
       vault: address(vault),
       staking: staking,
-      submitter: submitter,
+      creator: creator,
       metadataCID: metadataCid,
       swapTokenAddresses: swapTokenAddresses,
       swapAddress: swapAddress,
@@ -87,7 +87,7 @@ contract VaultRegistryTest is Test {
     VaultMetadata memory VaultInitParams = VaultMetadata({
       vault: address(vault),
       staking: staking,
-      submitter: submitter,
+      creator: creator,
       metadataCID: metadataCid,
       swapTokenAddresses: swapTokenAddresses,
       swapAddress: swapAddress,

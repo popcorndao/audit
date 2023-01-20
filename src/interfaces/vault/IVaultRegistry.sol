@@ -10,7 +10,7 @@ struct VaultMetadata {
   /// @notice Staking contract for the vault
   address staking;
   /// @notice Owner and Vault creator
-  address submitter;
+  address creator;
   /// @notice IPFS CID of vault metadata
   string metadataCID;
   /// @notice OPTIONAL - If the asset is an Lp Token these are its underlying assets

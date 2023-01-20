@@ -33,9 +33,5 @@ interface IAdapter is IERC4626, IOwned, IPermit, IPausable {
 
   function setHarvestCooldown(uint256 harvestCooldown) external;
 
-  function initialize(
-    bytes memory adapterBaseData,
-    address externalRegistry,
-    bytes memory adapterData
-  ) external;
+  function initialize(bytes memory adapterBaseData, address externalRegistry, bytes memory adapterData) external;
 }

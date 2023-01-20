@@ -62,10 +62,10 @@ contract VaultTest is Test {
     //////////////////////////////////////////////////////////////*/
 
   function _setFees(
-    uint256 depositFee,
-    uint256 withdrawalFee,
-    uint256 managementFee,
-    uint256 performanceFee
+    uint64 depositFee,
+    uint64 withdrawalFee,
+    uint64 managementFee,
+    uint64 performanceFee
   ) internal {
     vault.proposeFees(
       VaultFees({

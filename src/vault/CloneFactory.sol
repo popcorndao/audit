@@ -26,17 +26,17 @@ contract CloneFactory is Owned {
                           DEPLOY LOGIC
     //////////////////////////////////////////////////////////////*/
 
+  event Deployment(address indexed clone);
+
   error DeploymentInitFailed();
   error NotEndorsed(bytes32 templateKey);
-
-  event Deployment(address indexed clone);
 
   /**
    * @notice Clones an implementation and initializes the clone. Caller must be owner. (`DeploymentController`)
    * @param template The template to use for the deployment. (See TemplateRegistry for more details)
    * @param data The data to pass to the clone's initializer.
    */
-  function deploy(Template memory template, bytes memory data) external onlyOwner returns (address clone) {
+  function deploy(Template calldata template, bytes calldata data) external onlyOwner returns (address clone) {
     clone = Clones.clone(template.implementation);
 
     bool success = true;

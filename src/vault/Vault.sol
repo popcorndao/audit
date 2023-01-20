@@ -53,7 +53,7 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
   function initialize(
     IERC20 asset_,
     IERC4626 adapter_,
-    VaultFees memory fees_,
+    VaultFees calldata fees_,
     address feeRecipient_,
     address owner
   ) external initializer {
@@ -130,7 +130,7 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
   {
     if (receiver == address(0)) revert InvalidReceiver();
 
-    uint256 feeShares = convertToShares(assets.mulDiv(fees.deposit, 1e18, Math.Rounding.Down));
+    uint256 feeShares = convertToShares(assets.mulDiv(uint256(fees.deposit), 1e18, Math.Rounding.Down));
 
     shares = convertToShares(assets) - feeShares;
 
@@ -164,7 +164,7 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
   {
     if (receiver == address(0)) revert InvalidReceiver();
 
-    uint256 depositFee = fees.deposit;
+    uint256 depositFee = uint256(fees.deposit);
 
     uint256 feeShares = shares.mulDiv(depositFee, 1e18 - depositFee, Math.Rounding.Down);
 
@@ -201,7 +201,7 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
 
     shares = convertToShares(assets);
 
-    uint256 withdrawalFee = fees.withdrawal;
+    uint256 withdrawalFee = uint256(fees.withdrawal);
 
     uint256 feeShares = shares.mulDiv(withdrawalFee, 1e18 - withdrawalFee, Math.Rounding.Down);
 
@@ -238,7 +238,7 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
 
     if (msg.sender != owner) _approve(owner, msg.sender, allowance(owner, msg.sender) - shares);
 
-    uint256 feeShares = shares.mulDiv(fees.withdrawal, 1e18, Math.Rounding.Down);
+    uint256 feeShares = shares.mulDiv(uint256(fees.withdrawal), 1e18, Math.Rounding.Down);
 
     assets = convertToAssets(shares - feeShares);
 
@@ -289,7 +289,7 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
    * @dev This method accounts for issuance of accrued fee shares.
    */
   function previewDeposit(uint256 assets) public view returns (uint256 shares) {
-    shares = adapter.previewDeposit(assets - assets.mulDiv(fees.deposit, 1e18, Math.Rounding.Down));
+    shares = adapter.previewDeposit(assets - assets.mulDiv(uint256(fees.deposit), 1e18, Math.Rounding.Down));
   }
 
   /**
@@ -299,7 +299,7 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
    * @dev This method accounts for issuance of accrued fee shares.
    */
   function previewMint(uint256 shares) public view returns (uint256 assets) {
-    uint256 depositFee = fees.deposit;
+    uint256 depositFee = uint256(fees.deposit);
 
     shares += shares.mulDiv(depositFee, 1e18 - depositFee, Math.Rounding.Up);
 
@@ -313,7 +313,7 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
    * @dev This method accounts for both issuance of fee shares and withdrawal fee.
    */
   function previewWithdraw(uint256 assets) external view returns (uint256 shares) {
-    uint256 withdrawalFee = fees.withdrawal;
+    uint256 withdrawalFee = uint256(fees.withdrawal);
 
     assets += assets.mulDiv(withdrawalFee, 1e18 - withdrawalFee, Math.Rounding.Up);
 
@@ -329,7 +329,7 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
   function previewRedeem(uint256 shares) public view returns (uint256 assets) {
     assets = adapter.previewRedeem(shares);
 
-    assets -= assets.mulDiv(fees.withdrawal, 1e18, Math.Rounding.Down);
+    assets -= assets.mulDiv(uint256(fees.withdrawal), 1e18, Math.Rounding.Down);
   }
 
   /*//////////////////////////////////////////////////////////////
@@ -370,7 +370,7 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
   function accruedManagementFee() public view returns (uint256) {
     uint256 area = (totalAssets() + assetsCheckpoint) * (block.timestamp - feesUpdatedAt);
 
-    return (fees.management.mulDiv(area, 2, Math.Rounding.Down) / SECONDS_PER_YEAR) / 1e18;
+    return (uint256(fees.management).mulDiv(area, 2, Math.Rounding.Down) / SECONDS_PER_YEAR) / 1e18;
   }
 
   /**
@@ -383,7 +383,8 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
     uint256 shareValue = convertToAssets(ONE);
 
     if (shareValue > vaultShareHWM) {
-      return fees.performance.mulDiv((shareValue - vaultShareHWM) * totalSupply(), 1e18 * ONE, Math.Rounding.Down);
+      return
+        uint256(fees.performance).mulDiv((shareValue - vaultShareHWM) * totalSupply(), 1e18 * ONE, Math.Rounding.Down);
     } else {
       return 0;
     }
@@ -454,7 +455,7 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
    * @param newFees Fees for depositing, withdrawal, management and performance in 1e18.
    * @dev Fees can be 0 but never 1e18 (1e18 = 100%, 1e14 = 1 BPS)
    */
-  function proposeFees(VaultFees memory newFees) external onlyOwner {
+  function proposeFees(VaultFees calldata newFees) external onlyOwner {
     if (
       newFees.deposit >= 1e18 || newFees.withdrawal >= 1e18 || newFees.management >= 1e18 || newFees.performance >= 1e18
     ) revert InvalidVaultFees();

@@ -33,27 +33,27 @@ contract TemplateRegistry is Owned {
   mapping(bytes32 => bool) public templateExists;
 
   mapping(bytes32 => bool) public templateCategoryExists;
-  bytes32[] public templateCategorys;
-
-  error KeyNotFound(bytes32 templateCategory);
-  error TemplateExists(bytes32 templateId);
-  error TemplateCategoryExists(bytes32 templateCategory);
+  bytes32[] public templateCategories;
 
   event TemplateCategoryAdded(bytes32 templateCategory);
   event TemplateAdded(bytes32 templateCategory, bytes32 templateId, address implementation);
   event TemplateUpdated(bytes32 templateCategory, bytes32 templateId);
 
+  error KeyNotFound(bytes32 templateCategory);
+  error TemplateExists(bytes32 templateId);
+  error TemplateCategoryExists(bytes32 templateCategory);
+
   /**
    * @notice Adds a new templateCategory to the registry. Caller must be owner. (`DeploymentController`)
    * @param templateCategory A new category of templates.
-   * @dev The basic templateCategorys will be added via `VaultController` they are ("Vault", "Adapter", "Strategy" and "Staking").
+   * @dev The basic templateCategories will be added via `VaultController` they are ("Vault", "Adapter", "Strategy" and "Staking").
    * @dev Allows for new categories to be added in the future.
    */
   function addTemplateCategory(bytes32 templateCategory) external onlyOwner {
     if (templateCategoryExists[templateCategory]) revert TemplateCategoryExists(templateCategory);
 
     templateCategoryExists[templateCategory] = true;
-    templateCategorys.push(templateCategory);
+    templateCategories.push(templateCategory);
 
     emit TemplateCategoryAdded(templateCategory);
   }
@@ -64,16 +64,12 @@ contract TemplateRegistry is Owned {
    * @param templateId Unique TemplateId of the new template.
    * @param template Contains the implementation address and necessary informations to clone the implementation.
    */
-  function addTemplate(
-    bytes32 templateCategory,
-    bytes32 templateId,
-    Template memory template
-  ) external onlyOwner {
+  function addTemplate(bytes32 templateCategory, bytes32 templateId, Template memory template) external onlyOwner {
     if (!templateCategoryExists[templateCategory]) revert KeyNotFound(templateCategory);
     if (templateExists[templateId]) revert TemplateExists(templateId);
 
+    template.endorsed = false;
     templates[templateCategory][templateId] = template;
-    templates[templateCategory][templateId].endorsed = false;
 
     templateIds[templateCategory].push(templateId);
     templateExists[templateId] = true;
@@ -112,8 +108,8 @@ contract TemplateRegistry is Owned {
                           TEMPLATE VIEW LOGIC
     //////////////////////////////////////////////////////////////*/
 
-  function getTemplateCategorys() external view returns (bytes32[] memory) {
-    return templateCategorys;
+  function getTemplateCategories() external view returns (bytes32[] memory) {
+    return templateCategories;
   }
 
   function getTemplateIds(bytes32 templateCategory) external view returns (bytes32[] memory) {

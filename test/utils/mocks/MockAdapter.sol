@@ -13,11 +13,7 @@ contract MockAdapter is AdapterBase {
                                IMMUTABLES
     //////////////////////////////////////////////////////////////*/
 
-  function initialize(
-    bytes memory adapterInitData,
-    address,
-    bytes memory mockInitData
-  ) external {
+  function initialize(bytes memory adapterInitData, address, bytes memory mockInitData) external {
     __AdapterBase_init(adapterInitData);
 
     if (mockInitData.length > 0) initValue = abi.decode(mockInitData, (uint256));

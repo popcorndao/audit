@@ -63,11 +63,7 @@ contract DeploymentController is Owned {
    * @param template New template (See ITemplateRegistry for more details)
    * @dev (See TemplateRegistry for more details)
    */
-  function addTemplate(
-    bytes32 templateCategory,
-    bytes32 templateId,
-    Template memory template
-  ) external {
+  function addTemplate(bytes32 templateCategory, bytes32 templateId, Template calldata template) external {
     templateRegistry.addTemplate(templateCategory, templateId, template);
   }
 
@@ -99,7 +95,7 @@ contract DeploymentController is Owned {
   function deploy(
     bytes32 templateCategory,
     bytes32 templateId,
-    bytes memory data
+    bytes calldata data
   ) external onlyOwner returns (address clone) {
     Template memory template = templateRegistry.getTemplate(templateCategory, templateId);
 
@@ -107,19 +103,7 @@ contract DeploymentController is Owned {
 
     clone = cloneFactory.deploy(template, data);
 
-    cloneRegistry.addClone(clone);
-  }
-
-  /*//////////////////////////////////////////////////////////////
-                          ADD CLONE LOGIC
-    //////////////////////////////////////////////////////////////*/
-
-  /**
-   * @notice Add a clone to the registry which wasnt created via this contract. Caller must be owner. (`VaultController` via `AdminProxy`)
-   * @dev (See CloneRegistry for more details)
-   */
-  function addClone(address clone) external onlyOwner {
-    cloneRegistry.addClone(clone);
+    cloneRegistry.addClone(templateCategory, templateId, clone);
   }
 
   /*//////////////////////////////////////////////////////////////
@@ -140,7 +124,7 @@ contract DeploymentController is Owned {
    * @notice Accept ownership of dependency contracts.
    * @dev Must be called after construction.
    */
-  function acceptDependencyOwnership() public {
+  function acceptDependencyOwnership() external {
     IOwned(address(cloneFactory)).acceptOwnership();
     IOwned(address(cloneRegistry)).acceptOwnership();
     IOwned(address(templateRegistry)).acceptOwnership();

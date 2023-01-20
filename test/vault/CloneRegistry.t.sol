@@ -12,6 +12,9 @@ contract CloneRegistryTest is Test {
   address nonOwner = makeAddr("non owner");
   address clone = makeAddr("clone");
 
+  bytes32 templateCategory = "templateCategory";
+  bytes32 templateId = "templateId";
+
   event CloneAdded(address clone);
 
   function setUp() public {
@@ -28,14 +31,16 @@ contract CloneRegistryTest is Test {
     vm.expectEmit(false, false, false, true);
     emit CloneAdded(clone);
 
-    registry.addClone(clone);
+    registry.addClone(templateCategory, templateId, clone);
 
     assertEq(registry.cloneExists(clone), true);
+    assertEq(registry.clones(templateCategory, templateId, 0), clone);
+    assertEq(registry.allClones(0), clone);
   }
 
   function test__addClone_nonOwner() public {
     vm.prank(nonOwner);
     vm.expectRevert("Only the contract owner may perform this action");
-    registry.addClone(clone);
+    registry.addClone(templateCategory, templateId, clone);
   }
 }

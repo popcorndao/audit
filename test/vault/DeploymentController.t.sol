@@ -121,9 +121,9 @@ contract DeploymentControllerTest is Test {
 
     controller.addTemplateCategory(templateCategory);
 
-    bytes32[] memory templateCategorys = templateRegistry.getTemplateCategorys();
-    assertEq(templateCategorys.length, 1);
-    assertEq(templateCategorys[0], templateCategory);
+    bytes32[] memory templateCategories = templateRegistry.getTemplateCategories();
+    assertEq(templateCategories.length, 1);
+    assertEq(templateCategories[0], templateCategory);
     assertTrue(templateRegistry.templateCategoryExists(templateCategory));
   }
 
@@ -378,20 +378,6 @@ contract DeploymentControllerTest is Test {
 
     vm.prank(nonOwner);
     controller.deploy(templateCategory, templateId, "");
-  }
-
-  /*//////////////////////////////////////////////////////////////
-                            ADD CLONE 
-    //////////////////////////////////////////////////////////////*/
-
-  function test__addClone() public {
-    controller.addClone(address(1));
-    assertTrue(cloneRegistry.cloneExists(address(1)));
-  }
-
-  function testFail__addClone_nonOwner() public {
-    vm.prank(nonOwner);
-    controller.addClone(address(1));
   }
 
   /*//////////////////////////////////////////////////////////////

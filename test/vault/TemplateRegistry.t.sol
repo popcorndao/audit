@@ -5,14 +5,11 @@ pragma solidity ^0.8.15;
 
 import { Test } from "forge-std/Test.sol";
 import { TemplateRegistry, Template } from "../../src/vault/TemplateRegistry.sol";
-import { EndorsementRegistry } from "../../src/vault/EndorsementRegistry.sol";
 import { ClonableWithInitData } from "../utils/mocks/ClonableWithInitData.sol";
 import { ClonableWithoutInitData } from "../utils/mocks/ClonableWithoutInitData.sol";
 
 contract TemplateRegistryTest is Test {
   TemplateRegistry registry;
-
-  bytes32 public constant ENDORSEMENT_REGISTRY = keccak256("EndorsementRegistry");
 
   address nonOwner = address(0x666);
   bytes32 templateCategory = "templateCategory";
@@ -65,9 +62,9 @@ contract TemplateRegistryTest is Test {
 
     registry.addTemplateCategory(templateCategory);
 
-    bytes32[] memory templateCategorys = registry.getTemplateCategorys();
-    assertEq(templateCategorys.length, 1);
-    assertEq(templateCategorys[0], templateCategory);
+    bytes32[] memory templateCategories = registry.getTemplateCategories();
+    assertEq(templateCategories.length, 1);
+    assertEq(templateCategories[0], templateCategory);
     assertTrue(registry.templateCategoryExists(templateCategory));
   }
 
