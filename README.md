@@ -149,8 +149,8 @@ There are multiple possible targets for attacks.
 2. Draining user funds with malicious vaults/adapter/strategies or staking contracts
 3. Draining user funds with malicious assets
 4. Grieving of management functions
-## Threat model
-### Dangerous
+
+### Dangerous Attacks
 - Attack infrastructure to insert malicious assets / adapters / strategies
   - Set malicious `deploymentController`
   - Get malicious `Template` endorsed
@@ -160,7 +160,7 @@ There are multiple possible targets for attacks.
 - Change `fees` of a vault to the max amount and change the `feeRecipient` to the attacker
 - Exchange the adapter of a vault for a malicious adapter
 - Nominate new `owner` of the `adminProxy` to change configurations or endorse malicious `templates`
-## Grieving
+## Grieving Attacks
 - Set `harvestCooldown` too low and waste tokens and gas on harvests
 - Add a multitude of templates to make identifing the legit template harder in the endorsement process
 - `Reject` legit vaults / assets
