@@ -161,7 +161,6 @@ There are multiple possible targets for attacks.
 - Exchange the adapter of a vault for a malicious adapter
 - Nominate new `owner` of the `adminProxy` to change configurations or endorse malicious `templates`
 ## Grieving
-- Call array based functions with arrays that are too large to cause a gas overflow error
 - Set `harvestCooldown` too low and waste tokens and gas on harvests
 - Add a multitude of templates to make identifing the legit template harder in the endorsement process
 - `Reject` legit vaults / assets
