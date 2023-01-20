@@ -19,7 +19,7 @@ The Vault Factory part consists of a mix of Registry and Execution contracts. Al
 -   **VaultController:** This contract bundles all previously mentioned contracts. It adds additional ux and safety measures to the creation of **Vaults**, **Adapters** and **Staking** contracts. Any management function in the protocol must be executed via the **VaultController**.
 -   **AdminProxy:** This contract owns any clone and most infrastructure contracts. Its used to make ownership transfers easy in case the **VaultController** should get updated. This contracts forwards almost all calls from the **VaultController**.
 
-**Note:** This system ensures that minimal user input is needed and executions are handled with valid inputs and in the correct order. The goal is to minimize human error and the attack surface. A lot of configurations for **Adapters** and **Strategies** is very protocol specific. These are therefore mainly handled in the implementations itself. There is still a need for some kind of governance to ensure that only correct and safe **Templates** are added and dangerous assets get rejected. 
+**Note:** This system ensures that minimal user input is needed and executions are handled with valid inputs and in the correct order. The goal is to minimize human error and the attack surface. A lot of configurations for **Adapters** and **Strategies** is very protocol specific. These are therefore mainly handled in the implementations itself. **Adapters** should receive all there critical data from an on-chain registry of the underlying protocol. As its nearly impossible to tell otherwise if the passed in configuration is malicious. There is still a need for some kind of governance to ensure that only correct and safe **Templates** are added and dangerous assets get rejected. 
 <br/>
 
 ![vaultInfraFlow](./vaultInfraFlow.PNG)
@@ -144,26 +144,46 @@ Additionally there are some wip sample strategies which might help to illustrate
 <br/>
 
 # Security
-
+There are multiple possible targets for attacks.
+1. Draining user funds of endorsed vaults
+2. Draining user funds with malicious vaults/adapter/strategies or staking contracts
+3. Draining user funds with malicious assets
+4. Grieving of management functions
 ## Threat model
 ### Dangerous
 - Attack infrastructure to insert malicious assets / adapters / strategies
-- - Set malicious deploymentController
-- - Get malicious template endorsed
-- - Get malicious asset endorsed
-- Initial Deposit exploit
-- Change Fees and Fee recipient
-- Exchange adapter for malicious adapter
-- Register vaults in registry before creation to either grieve or set a malicious staking address
-- Nominate new owner of admin proxy
-- Predeploy deterministic proxies on other chains
-- TotalAsset() manipulation to withdraw additional assets or earn more shares
+  - Set malicious `deploymentController`
+  - Get malicious `Template` endorsed
+  - Get malicious `asset` endorsed
+- Initial Deposit exploit (See the test in `YearnAdapter.t.sol`)
+- Manipulate `totalAsset()` to withdraw additional assets or earn more shares (Similar to the "inital deposit exploit")
+- Change `fees` of a vault to the max amount and change the `feeRecipient` to the attacker
+- Exchange the adapter of a vault for a malicious adapter
+- Nominate new `owner` of the `adminProxy` to change configurations or endorse malicious `templates`
 ## Grieving
-- Call array based functions with arrays that are too large
-- Set harvestCooldown too low and waste tokens and gas harvesting?
-- Spam template names?
-- Reject legit vaults / assets
-- Pause Vaults / adapters of other people
+- Call array based functions with arrays that are too large to cause a gas overflow error
+- Set `harvestCooldown` too low and waste tokens and gas on harvests
+- Add a multitude of templates to make identifing the legit template harder in the endorsement process
+- `Reject` legit vaults / assets
+- `Pause` vaults / adapters of other `creators`
+- Predeploy deterministic proxies on other chains
+
+Most of these attacks are only possible when the `VaultController` is misconfigured on deployment or its `owner` is compromised. The `owner` of `VaultController` should be a MultiSig which should make this process harder but nonetheless not impossible.<br/>
+
+## Initial Deposit Attack
+The `totalAsset` issue is one that i think all ERC4626 implementations are suffering from. A similiar issue that affects yearn is already known. See Finding 3, "Division rounding may affect issuance of shares" in [Yearn's ToB audit](https://github.com/yearn/yearn-security/blob/master/audits/20210719_ToB_yearn_vaultsv2/ToB_-_Yearn_Vault_v_2_Smart_Contracts_Audit_Report.pdf) for the details. Yearn vaults are vulnerable to an expensive but possible attack where a malicious initial deposit can force share calculations to round down. It's possible to prevent this by ensuring that the first vault deposit is sufficiently large, usually done by making an initial deposit at deployment.
+Too my knowledge that has not been addressed by Yearn but has also not been exploited yet. To prevent this `creators` can send an initial deposit on vault/adapter creation.
+
+```
+1. Deposit any amount of assets in 4626.
+2. Borrow assets and deposit them directly in the underlying protocol.
+3. Send the minted shares of the underlying protocol to the 4626.
+   -> TotalAssets gets inflated to the point that new deposits dont receive enough 4626 shares
+4. Wait for deposits into 4626 by other users
+   -> User doesnt get enough shares
+5. Redeem 4626 shares and earn some stolen assets 
+6. Repay loan
+```
 
 # Developer Notes
 
