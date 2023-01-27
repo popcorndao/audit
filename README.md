@@ -156,7 +156,6 @@ There are multiple possible targets for attacks.
   - Get malicious `Template` endorsed
   - Get malicious `asset` endorsed
 - Initial Deposit exploit (See the test in `YearnAdapter.t.sol`)
-- Manipulate `totalAsset()` to withdraw additional assets or earn more shares (Similar to the "inital deposit exploit")
 - Change `fees` of a vault to the max amount and change the `feeRecipient` to the attacker
 - Exchange the adapter of a vault for a malicious adapter
 - Nominate new `owner` of the `adminProxy` to change configurations or endorse malicious `templates`
@@ -169,20 +168,9 @@ There are multiple possible targets for attacks.
 
 Most of these attacks are only possible when the `VaultController` is misconfigured on deployment or its `owner` is compromised. The `owner` of `VaultController` should be a MultiSig which should make this process harder but nonetheless not impossible.<br/>
 
-## Initial Deposit Attack
-The `totalAsset` issue is one that i think all ERC4626 implementations are suffering from. A similiar issue that affects yearn is already known. See Finding 3, "Division rounding may affect issuance of shares" in [Yearn's ToB audit](https://github.com/yearn/yearn-security/blob/master/audits/20210719_ToB_yearn_vaultsv2/ToB_-_Yearn_Vault_v_2_Smart_Contracts_Audit_Report.pdf) for the details. Yearn vaults are vulnerable to an expensive but possible attack where a malicious initial deposit can force share calculations to round down. It's possible to prevent this by ensuring that the first vault deposit is sufficiently large, usually done by making an initial deposit at deployment.
-Too my knowledge that has not been addressed by Yearn but has also not been exploited yet. To prevent this `creators` can send an initial deposit on vault/adapter creation.
-
-```
-1. Deposit any amount of assets in 4626.
-2. Borrow assets and deposit them directly in the underlying protocol.
-3. Send the minted shares of the underlying protocol to the 4626.
-   -> TotalAssets gets inflated to the point that new deposits dont receive enough 4626 shares
-4. Wait for deposits into 4626 by other users
-   -> User doesnt get enough shares
-5. Redeem 4626 shares and earn some stolen assets 
-6. Repay loan
-```
+## Inflation Attack
+EIP-4626 is vulnerable to the so-called [inflation attacks](https://ethereum-magicians.org/t/address-eip-4626-inflation-attacks-with-virtual-shares-and-assets/12677). This attack results from the possibility to manipulate the exchange rate and front run a victim’s deposit when the vault has low liquidity volume.  A similiar issue that affects yearn is already known. See Finding 3, "Division rounding may affect issuance of shares" in [Yearn's ToB audit](https://github.com/yearn/yearn-security/blob/master/audits/20210719_ToB_yearn_vaultsv2/ToB_-_Yearn_Vault_v_2_Smart_Contracts_Audit_Report.pdf) for the details. In order to combat this `AdapterBase.sol` ignores gifted assets when calculating `totalAssets`. (To ensure correct functionality of rebasing tokens is the responsibility of the concrete `adapter`-implementations).
+Additionally `creators` can send an initial deposit on vault/adapter creation to create some inital volume.
 
 # Developer Notes
 
