@@ -23,64 +23,107 @@ import {ERC20Upgradeable} from "openzeppelin-contracts-upgradeable/token/ERC20/E
  * It allows for multiple type of fees which are taken by issuing new vault shares.
  * Adapter and fees can be changed by the owner after a ragequit time.
  */
-contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradeable, OwnedUpgradeable {
-  using SafeERC20 for IERC20;
-  using Math for uint256;
+contract Vault is
+    ERC20Upgradeable,
+    ReentrancyGuardUpgradeable,
+    PausableUpgradeable,
+    OwnedUpgradeable
+{
+    using SafeERC20 for IERC20;
+    using Math for uint256;
 
-  uint256 constant SECONDS_PER_YEAR = 365.25 days;
+    uint256 constant SECONDS_PER_YEAR = 365.25 days;
 
-  IERC20 public asset;
-  uint8 internal _decimals;
+    IERC20 public asset;
+    uint8 internal _decimals;
 
-  bytes32 public contractName;
+    bytes32 public contractName;
 
-  event VaultInitialized(bytes32 contractName, address indexed asset);
+    event VaultInitialized(bytes32 contractName, address indexed asset);
 
-  error InvalidAsset();
-  error InvalidAdapter();
+    error InvalidAsset();
+    error InvalidAdapter();
 
-  /**
-   * @notice Initialize a new Vault.
-   * @param asset_ Underlying Asset which users will deposit.
-   * @param adapter_ Adapter which will be used to interact with the wrapped protocol.
-   * @param fees_ Desired fees in 1e18. (1e18 = 100%, 1e14 = 1 BPS)
-   * @param feeRecipient_ Recipient of all vault fees. (Must not be zero address)
-   * @param owner Owner of the contract. Controls management functions.
-   * @dev This function is called by the factory contract when deploying a new vault.
-   * @dev Usually the adapter should already be pre configured. Otherwise a new one can only be added after a ragequit time.
-   */
-  function initialize(
-    IERC20 asset_,
-    IERC4626 adapter_,
-    VaultFees calldata fees_,
-    address feeRecipient_,
-    address owner
-  ) external initializer {
-    __ERC20_init(
-      string.concat("Popcorn ", IERC20Metadata(address(asset_)).name(), " Vault"),
-      string.concat("pop-", IERC20Metadata(address(asset_)).symbol())
-    );
-    __Owned_init(owner);
+    /**
+     * @notice Initialize a new Vault.
+     * @param asset_ Underlying Asset which users will deposit.
+     * @param adapter_ Adapter which will be used to interact with the wrapped protocol.
+     * @param fees_ Desired fees in 1e18. (1e18 = 100%, 1e14 = 1 BPS)
+     * @param feeRecipient_ Recipient of all vault fees. (Must not be zero address)
+     * @param owner Owner of the contract. Controls management functions.
+     * @dev This function is called by the factory contract when deploying a new vault.
+     * @dev Usually the adapter should already be pre configured. Otherwise a new one can only be added after a ragequit time.
+     */
+    function initialize(
+        IERC20 asset_,
+        IERC4626 adapter_,
+        VaultFees calldata fees_,
+        address feeRecipient_,
+        address owner
+    ) external initializer {
+        __ERC20_init(
+            string.concat(
+                "Popcorn ",
+                IERC20Metadata(address(asset_)).name(),
+                " Vault"
+            ),
+            string.concat("pop-", IERC20Metadata(address(asset_)).symbol())
+        );
+        __Owned_init(owner);
 
-    if (address(asset_) == address(0)) revert InvalidAsset();
-    if (address(asset_) != adapter_.asset()) revert InvalidAdapter();
+        if (address(asset_) == address(0)) revert InvalidAsset();
+        if (address(asset_) != adapter_.asset()) revert InvalidAdapter();
 
-    asset = asset_;
-    adapter = adapter_;
+        asset = asset_;
+        adapter = adapter_;
 
-    asset.approve(address(adapter_), type(uint256).max);
+        asset.approve(address(adapter_), type(uint256).max);
 
-    _decimals = IERC20Metadata(address(asset_)).decimals();
+        _decimals = IERC20Metadata(address(asset_)).decimals();
+
+        INITIAL_CHAIN_ID = block.chainid;
+        INITIAL_DOMAIN_SEPARATOR = computeDomainSeparator();
+
+        feesUpdatedAt = block.timestamp;
+        fees = fees_;
+
+        if (feeRecipient_ == address(0)) revert InvalidFeeRecipient();
+        feeRecipient = feeRecipient_;
+
+        contractName = keccak256(
+            abi.encodePacked("Popcorn", name(), block.timestamp, "Vault")
+        );
+
+        emit VaultInitialized(contractName, address(asset));
+    }
 
     function decimals() public view override returns (uint8) {
         return _decimals;
     }
 
-    feesUpdatedAt = block.timestamp;
-    fees = fees_;
+    /*//////////////////////////////////////////////////////////////
+                        DEPOSIT/WITHDRAWAL LOGIC
+    //////////////////////////////////////////////////////////////*/
 
-    if (feeRecipient_ == address(0)) revert InvalidFeeRecipient();
-    feeRecipient = feeRecipient_;
+    event Deposit(
+        address indexed caller,
+        address indexed owner,
+        uint256 assets,
+        uint256 shares
+    );
+    event Withdraw(
+        address indexed caller,
+        address indexed receiver,
+        address indexed owner,
+        uint256 assets,
+        uint256 shares
+    );
+
+    error InvalidReceiver();
+
+    function deposit(uint256 assets) public returns (uint256) {
+        return deposit(assets, msg.sender);
+    }
 
     /**
      * @notice Deposit exactly `assets` amount of tokens, issuing vault shares to `receiver`.
@@ -103,13 +146,13 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
 
         shares = convertToShares(assets) - feeShares;
 
-        asset.safeTransferFrom(msg.sender, address(this), assets);
-
-        adapter.deposit(assets, address(this));
-
         if (feeShares > 0) _mint(feeRecipient, feeShares);
 
         _mint(receiver, shares);
+
+        asset.safeTransferFrom(msg.sender, address(this), assets);
+
+        adapter.deposit(assets, address(this));
 
         emit Deposit(msg.sender, receiver, assets, shares);
     }
@@ -143,13 +186,13 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
 
         assets = convertToAssets(shares + feeShares);
 
-        asset.safeTransferFrom(msg.sender, address(this), assets);
-
-        adapter.deposit(assets, address(this));
-
         if (feeShares > 0) _mint(feeRecipient, feeShares);
 
         _mint(receiver, shares);
+
+        asset.safeTransferFrom(msg.sender, address(this), assets);
+
+        adapter.deposit(assets, address(this));
 
         emit Deposit(msg.sender, receiver, assets, shares);
     }
@@ -376,49 +419,53 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
                         FEE ACCOUNTING LOGIC
     //////////////////////////////////////////////////////////////*/
 
-  /**
-   * @notice Management fee that has accrued since last fee harvest.
-   * @return Accrued management fee in underlying `asset` token.
-   * @dev Management fee is annualized per minute, based on 525,600 minutes per year. Total assets are calculated using
-   *  the average of their current value and the value at the previous fee harvest checkpoint. This method is similar to
-   *  calculating a definite integral using the trapezoid rule.
-   */
-  function accruedManagementFee() public view returns (uint256) {
-    uint256 managementFee = fees.management;
-    return
-      managementFee > 0
-        ? managementFee.mulDiv(
-          totalAssets() * (block.timestamp - feesUpdatedAt),
-          SECONDS_PER_YEAR,
-          Math.Rounding.Down
-        ) / 1e18
-        : 0;
-  }
+    /**
+     * @notice Management fee that has accrued since last fee harvest.
+     * @return Accrued management fee in underlying `asset` token.
+     * @dev Management fee is annualized per minute, based on 525,600 minutes per year. Total assets are calculated using
+     *  the average of their current value and the value at the previous fee harvest checkpoint. This method is similar to
+     *  calculating a definite integral using the trapezoid rule.
+     */
+    function accruedManagementFee() public view returns (uint256) {
+        uint256 managementFee = fees.management;
+        return
+            managementFee > 0
+                ? managementFee.mulDiv(
+                    totalAssets() * (block.timestamp - feesUpdatedAt),
+                    SECONDS_PER_YEAR,
+                    Math.Rounding.Down
+                ) / 1e18
+                : 0;
+    }
 
-  /**
-   * @notice Performance fee that has accrued since last fee harvest.
-   * @return Accrued performance fee in underlying `asset` token.
-   * @dev Performance fee is based on a high water mark value. If vault share value has increased above the
-   *   HWM in a fee period, issue fee shares to the vault equal to the performance fee.
-   */
-  function accruedPerformanceFee() public view returns (uint256) {
-    uint256 highWaterMark_ = highWaterMark;
-    uint256 shareValue = convertToAssets(1e18);
-    uint256 performanceFee = fees.performance;
+    /**
+     * @notice Performance fee that has accrued since last fee harvest.
+     * @return Accrued performance fee in underlying `asset` token.
+     * @dev Performance fee is based on a high water mark value. If vault share value has increased above the
+     *   HWM in a fee period, issue fee shares to the vault equal to the performance fee.
+     */
+    function accruedPerformanceFee() public view returns (uint256) {
+        uint256 highWaterMark_ = highWaterMark;
+        uint256 shareValue = convertToAssets(1e18);
+        uint256 performanceFee = fees.performance;
 
-    return
-      performanceFee > 0 && shareValue > highWaterMark
-        ? performanceFee.mulDiv((shareValue - highWaterMark) * totalSupply(), 1e36, Math.Rounding.Down)
-        : 0;
-  }
+        return
+            performanceFee > 0 && shareValue > highWaterMark
+                ? performanceFee.mulDiv(
+                    (shareValue - highWaterMark) * totalSupply(),
+                    1e36,
+                    Math.Rounding.Down
+                )
+                : 0;
+    }
 
-  /*//////////////////////////////////////////////////////////////
+    /*//////////////////////////////////////////////////////////////
                             FEE LOGIC
     //////////////////////////////////////////////////////////////*/
 
-  uint256 public highWaterMark = 1e18;
-  uint256 public assetsCheckpoint;
-  uint256 public feesUpdatedAt;
+    uint256 public highWaterMark = 1e18;
+    uint256 public assetsCheckpoint;
+    uint256 public feesUpdatedAt;
 
     error InsufficientWithdrawalAmount(uint256 amount);
 
@@ -429,26 +476,27 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
         takeFees
     {}
 
-  /// @notice Collect management and performance fees and update vault share high water mark.
-  modifier takeFees() {
-    uint256 managementFee = accruedManagementFee();
-    uint256 totalFee = managementFee + accruedPerformanceFee();
-    uint256 currentAssets = totalAssets();
-    uint256 shareValue = convertToAssets(1e18);
+    /// @notice Collect management and performance fees and update vault share high water mark.
+    modifier takeFees() {
+        uint256 managementFee = accruedManagementFee();
+        uint256 totalFee = managementFee + accruedPerformanceFee();
+        uint256 currentAssets = totalAssets();
+        uint256 shareValue = convertToAssets(1e18);
 
-    if (shareValue > highWaterMark) highWaterMark = shareValue;
+        if (shareValue > highWaterMark) highWaterMark = shareValue;
 
-    if (managementFee > 0) feesUpdatedAt = block.timestamp;
+        if (managementFee > 0) feesUpdatedAt = block.timestamp;
 
-    if (totalFee > 0 && currentAssets > 0) _mint(feeRecipient, convertToShares(totalFee));
+        if (totalFee > 0 && currentAssets > 0)
+            _mint(feeRecipient, convertToShares(totalFee));
 
-    _;
-  }
+        _;
+    }
 
-  modifier syncFeeCheckpoint() {
-    _;
-    highWaterMark = convertToAssets(1e18);
-  }
+    modifier syncFeeCheckpoint() {
+        _;
+        highWaterMark = convertToAssets(1e18);
+    }
 
     /*//////////////////////////////////////////////////////////////
                             FEE MANAGEMENT LOGIC
@@ -568,7 +616,7 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
                           RAGE QUIT LOGIC
     //////////////////////////////////////////////////////////////*/
 
-  uint256 public quitPeriod = 3 days;
+    uint256 public quitPeriod = 3 days;
 
     event QuitPeriodSet(uint256 quitPeriod);
 
