@@ -17,7 +17,7 @@ contract MockAdapter is AdapterBase {
         bytes memory adapterInitData,
         address,
         bytes memory mockInitData
-    ) external {
+    ) external initializer {
         __AdapterBase_init(adapterInitData);
 
         if (mockInitData.length > 0)
