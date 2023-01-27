@@ -13,7 +13,11 @@ contract MockAdapter is AdapterBase {
                                IMMUTABLES
     //////////////////////////////////////////////////////////////*/
 
-  function initialize(bytes memory adapterInitData, address, bytes memory mockInitData) external {
+  function initialize(
+    bytes memory adapterInitData,
+    address,
+    bytes memory mockInitData
+  ) external {
     __AdapterBase_init(adapterInitData);
 
     if (mockInitData.length > 0) initValue = abi.decode(mockInitData, (uint256));
@@ -23,7 +27,11 @@ contract MockAdapter is AdapterBase {
                             ACCOUNTING LOGIC
     //////////////////////////////////////////////////////////////*/
 
-  function totalAssets() public view override returns (uint256) {
+  function _totalAssets() internal view override returns (uint256) {
+    return underlyingBalance;
+  }
+
+  function _underlyingBalance() internal view override returns (uint256) {
     return IERC20(asset()).balanceOf(address(this));
   }
 

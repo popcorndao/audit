@@ -28,7 +28,6 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
   using Math for uint256;
 
   uint256 constant SECONDS_PER_YEAR = 365.25 days;
-  uint256 internal ONE;
 
   IERC20 public asset;
   uint8 internal _decimals;
@@ -76,13 +75,8 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
     INITIAL_CHAIN_ID = block.chainid;
     INITIAL_DOMAIN_SEPARATOR = computeDomainSeparator();
 
-    ONE = 10**decimals();
-    vaultShareHWM = ONE;
-
     feesUpdatedAt = block.timestamp;
     fees = fees_;
-
-    quitPeriod = 3 days;
 
     if (feeRecipient_ == address(0)) revert InvalidFeeRecipient();
     feeRecipient = feeRecipient_;
@@ -368,33 +362,39 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
    *  calculating a definite integral using the trapezoid rule.
    */
   function accruedManagementFee() public view returns (uint256) {
-    uint256 area = (totalAssets() + assetsCheckpoint) * (block.timestamp - feesUpdatedAt);
-
-    return (uint256(fees.management).mulDiv(area, 2, Math.Rounding.Down) / SECONDS_PER_YEAR) / 1e18;
+    uint256 managementFee = fees.management;
+    return
+      managementFee > 0
+        ? managementFee.mulDiv(
+          totalAssets() * (block.timestamp - feesUpdatedAt),
+          SECONDS_PER_YEAR,
+          Math.Rounding.Down
+        ) / 1e18
+        : 0;
   }
 
   /**
    * @notice Performance fee that has accrued since last fee harvest.
    * @return Accrued performance fee in underlying `asset` token.
-   * @dev Performance fee is based on a vault share high water mark value. If vault share value has increased above the
+   * @dev Performance fee is based on a high water mark value. If vault share value has increased above the
    *   HWM in a fee period, issue fee shares to the vault equal to the performance fee.
    */
   function accruedPerformanceFee() public view returns (uint256) {
-    uint256 shareValue = convertToAssets(ONE);
+    uint256 highWaterMark_ = highWaterMark;
+    uint256 shareValue = convertToAssets(1e18);
+    uint256 performanceFee = fees.performance;
 
-    if (shareValue > vaultShareHWM) {
-      return
-        uint256(fees.performance).mulDiv((shareValue - vaultShareHWM) * totalSupply(), 1e18 * ONE, Math.Rounding.Down);
-    } else {
-      return 0;
-    }
+    return
+      performanceFee > 0 && shareValue > highWaterMark
+        ? performanceFee.mulDiv((shareValue - highWaterMark) * totalSupply(), 1e36, Math.Rounding.Down)
+        : 0;
   }
 
   /*//////////////////////////////////////////////////////////////
                             FEE LOGIC
     //////////////////////////////////////////////////////////////*/
 
-  uint256 public vaultShareHWM;
+  uint256 public highWaterMark = 1e18;
   uint256 public assetsCheckpoint;
   uint256 public feesUpdatedAt;
 
@@ -408,27 +408,20 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
     uint256 managementFee = accruedManagementFee();
     uint256 totalFee = managementFee + accruedPerformanceFee();
     uint256 currentAssets = totalAssets();
+    uint256 shareValue = convertToAssets(1e18);
 
-    uint256 shareValue = convertToAssets(ONE);
+    if (shareValue > highWaterMark) highWaterMark = shareValue;
 
-    if (shareValue > vaultShareHWM) vaultShareHWM = shareValue;
+    if (managementFee > 0) feesUpdatedAt = block.timestamp;
 
-    if (managementFee > 0 || currentAssets == 0) {
-      feesUpdatedAt = block.timestamp;
-    }
-
-    if (totalFee > 0 && currentAssets > 0) {
-      _mint(feeRecipient, convertToShares(totalFee));
-    }
+    if (totalFee > 0 && currentAssets > 0) _mint(feeRecipient, convertToShares(totalFee));
 
     _;
-    assetsCheckpoint = totalAssets();
   }
 
   modifier syncFeeCheckpoint() {
     _;
-    vaultShareHWM = convertToAssets(ONE);
-    assetsCheckpoint = totalAssets();
+    highWaterMark = convertToAssets(1e18);
   }
 
   /*//////////////////////////////////////////////////////////////
@@ -539,7 +532,7 @@ contract Vault is ERC20Upgradeable, ReentrancyGuardUpgradeable, PausableUpgradea
                           RAGE QUIT LOGIC
     //////////////////////////////////////////////////////////////*/
 
-  uint256 public quitPeriod; // default is 3 days
+  uint256 public quitPeriod = 3 days;
 
   event QuitPeriodSet(uint256 quitPeriod);
 
